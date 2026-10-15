@@ -19,6 +19,7 @@ st.set_page_config(
 # 2. Import modular page renderers
 from src.ui_pages.styles import get_custom_css
 from src.ui_pages.home import render_home_page
+from src.ui_pages.upload_page import render_upload_page
 from src.ui_pages.eda import render_eda_page
 from src.ui_pages.prediction_page import render_prediction_page
 from src.ui_pages.shap_page import render_shap_page
@@ -45,6 +46,7 @@ def main():
     # Navigation Menu
     pages = {
         "🏠 Home Dashboard": render_home_page,
+        "📁 Upload Dataset & Predict Risk": render_upload_page,
         "📊 Exploratory Data Analysis": render_eda_page,
         "🎯 Loan Default Prediction": render_prediction_page,
         "🔍 Explainable AI (SHAP)": render_shap_page,

@@ -141,12 +141,13 @@ def test_verification_suite():
     # 10. Website pages import without runtime errors
     print("\n[CHECK 10] Streamlit Page Renderers Integrity...")
     from src.ui_pages.home import render_home_page
+    from src.ui_pages.upload_page import render_upload_page
     from src.ui_pages.eda import render_eda_page
     from src.ui_pages.prediction_page import render_prediction_page
     from src.ui_pages.shap_page import render_shap_page
     from src.ui_pages.models_page import render_models_page
     from src.ui_pages.whatif_page import render_whatif_page
-    print(" PASS: All 6 active page modules imported cleanly without syntax or dependency errors.")
+    print(" PASS: All 7 active page modules imported cleanly without syntax or dependency errors.")
 
     # 11. Batch dataset prediction and risk scoring
     print("\n[CHECK 11] Batch Dataset Prediction & Risk Scoring...")

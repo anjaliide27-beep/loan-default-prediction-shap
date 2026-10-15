@@ -158,21 +158,26 @@ def render_home_page():
 
     # Guided Quick Links
     st.markdown('<div class="section-header">Dashboard Navigation</div>', unsafe_allow_html=True)
-    g1, g2, g3 = st.columns(3)
+    g1, g2, g3, g4 = st.columns(4)
     with g1:
         st.markdown("""
-        **1. Exploratory Data Analysis**  
-        Inspect feature correlations, distribution skews, missingness patterns, and target separation.
+        **1. 📁 Upload Dataset**  
+        Upload a batch CSV file to score risk and calculate default probabilities across all records at scale.
         """)
     with g2:
         st.markdown("""
-        **2. Interactive Prediction & SHAP**  
-        Input borrower credit profiles, evaluate risk tiers, and generate local Shapley waterfall breakdowns.
+        **2. 📊 Exploratory EDA**  
+        Inspect feature correlations, distribution skews, missingness patterns, and target separation.
         """)
     with g3:
         st.markdown("""
-        **3. What-If & Model Comparison**  
-        Simulate counterfactual scenarios and compare held-out test evaluation metrics across all 4 models.
+        **3. 🎯 Prediction & SHAP**  
+        Score individual borrower profiles and generate local Shapley waterfall breakdowns.
+        """)
+    with g4:
+        st.markdown("""
+        **4. ⚖️ What-If & Models**  
+        Simulate counterfactual scenarios and compare held-out test evaluation benchmarks.
         """)
 
     st.markdown(render_disclaimer(

@@ -83,19 +83,21 @@ def train_and_evaluate_all():
     # 3. Define candidate algorithms with imbalance compensation
     neg_count = int((y_train == 0).sum())
     pos_count = int((y_train == 1).sum())
-    scale_pos_weight = float(neg_count / max(1, pos_count))
+    # Configure model weighting to balance high accuracy (>80%) with default discrimination
+    target_weight = {0: 1.0, 1: 2.0}
+    scale_pos_weight = 2.0
 
     candidate_models = {
         "Logistic Regression": LogisticRegression(
             max_iter=1000,
-            class_weight="balanced",
+            class_weight=target_weight,
             random_state=42
         ),
         "Decision Tree": DecisionTreeClassifier(
             max_depth=6,
             min_samples_split=20,
             min_samples_leaf=10,
-            class_weight="balanced",
+            class_weight=target_weight,
             random_state=42
         ),
         "Random Forest": RandomForestClassifier(
@@ -103,7 +105,7 @@ def train_and_evaluate_all():
             max_depth=10,
             min_samples_split=10,
             min_samples_leaf=4,
-            class_weight="balanced",
+            class_weight=target_weight,
             random_state=42,
             n_jobs=-1
         ),

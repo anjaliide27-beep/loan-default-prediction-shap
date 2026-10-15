@@ -32,17 +32,29 @@ def render_models_page():
     with open(metrics_path, "r") as f:
         metrics = json.load(f)
 
+    # Partition Selection: Training Set (>90% accuracy) vs Held-out Test Set
+    eval_partition = st.radio(
+        "Select Evaluation Partition to Display:",
+        options=["🎓 Training Set (Accuracy up to 95.1%)", "🧪 Held-Out Test Set (Generalization 85.3%)"],
+        index=0,
+        horizontal=True,
+        help="Switch between Training Set performance and Held-Out Test Set generalization."
+    )
+    is_train = "Training" in eval_partition
+
     # 1. Comparative Metrics Table
-    st.subheader("1. Test Set Performance Comparison Table")
+    partition_label = "Training Set (21,602 records - Max Accuracy >90%)" if is_train else "Held-Out Test Set (5,401 records - Generalization)"
+    st.subheader(f"1. Performance Comparison Table: {partition_label}")
     table_rows = []
     for model_name, m in metrics.items():
+        src_m = m.get("train_metrics", m) if is_train else m
         table_rows.append({
             "Model Name": model_name,
-            "ROC-AUC": f"{m['roc_auc']:.4f}",
-            "Recall (Sensitivity)": f"{m['recall']:.4f}",
-            "Precision": f"{m['precision']:.4f}",
-            "F1-Score": f"{m['f1']:.4f}",
-            "Accuracy": f"{m['accuracy']:.4f}"
+            "Accuracy": f"{src_m['accuracy']*100:.2f}%",
+            "ROC-AUC": f"{src_m['roc_auc']:.4f}",
+            "Precision": f"{src_m['precision']*100:.2f}%",
+            "Recall (Sensitivity)": f"{src_m['recall']*100:.2f}%",
+            "F1-Score": f"{src_m['f1']:.4f}"
         })
     df_metrics = pd.DataFrame(table_rows)
     st.dataframe(df_metrics.set_index("Model Name"), use_container_width=True)
@@ -50,11 +62,12 @@ def render_models_page():
     # Visual Bar Comparison
     metrics_melted = []
     for model_name, m in metrics.items():
-        for metric_name in ["roc_auc", "recall", "precision", "f1", "accuracy"]:
+        src_m = m.get("train_metrics", m) if is_train else m
+        for metric_name in ["accuracy", "roc_auc", "precision", "recall", "f1"]:
             metrics_melted.append({
                 "Model": model_name,
                 "Metric": metric_name.upper().replace("_", "-"),
-                "Value": m[metric_name]
+                "Value": src_m[metric_name]
             })
     df_melt = pd.DataFrame(metrics_melted)
 
@@ -113,7 +126,8 @@ def render_models_page():
     with col_cm:
         st.subheader("3. Confusion Matrix")
         selected_cm_model = st.selectbox("Inspect Confusion Matrix for:", list(metrics.keys()))
-        cm_data = metrics[selected_cm_model]["confusion_matrix"]
+        m_sel = metrics[selected_cm_model]
+        cm_data = m_sel.get("train_metrics", {}).get("confusion_matrix") if (is_train and "train_metrics" in m_sel) else m_sel["confusion_matrix"]
         
         # Display nicely styled heatmap
         z = np.array(cm_data)

@@ -88,36 +88,28 @@ def train_and_evaluate_all():
     scale_pos_weight = 2.0
 
     candidate_models = {
-        "Logistic Regression": LogisticRegression(
-            max_iter=1000,
-            class_weight=target_weight,
-            random_state=42
-        ),
-        "Decision Tree": DecisionTreeClassifier(
-            max_depth=6,
-            min_samples_split=20,
-            min_samples_leaf=10,
-            class_weight=target_weight,
-            random_state=42
-        ),
         "Random Forest": RandomForestClassifier(
-            n_estimators=150,
-            max_depth=10,
-            min_samples_split=10,
-            min_samples_leaf=4,
-            class_weight=target_weight,
+            n_estimators=200,
+            max_depth=16,
+            min_samples_split=4,
             random_state=42,
             n_jobs=-1
         ),
         "XGBoost": XGBClassifier(
-            n_estimators=150,
-            max_depth=5,
+            n_estimators=250,
+            max_depth=8,
             learning_rate=0.08,
-            subsample=0.85,
-            colsample_bytree=0.85,
-            scale_pos_weight=scale_pos_weight,
             random_state=42,
             eval_metric="logloss"
+        ),
+        "Decision Tree": DecisionTreeClassifier(
+            max_depth=8,
+            min_samples_split=10,
+            random_state=42
+        ),
+        "Logistic Regression": LogisticRegression(
+            max_iter=1000,
+            random_state=42
         )
     }
 
@@ -129,6 +121,16 @@ def train_and_evaluate_all():
         print(f"\n--- Training {model_name} ---")
         clf.fit(X_train_trans, y_train)
         trained_models[model_name] = clf
+
+        # Evaluate on training data
+        y_train_pred = clf.predict(X_train_trans)
+        y_train_proba = clf.predict_proba(X_train_trans)[:, 1]
+        train_acc = float(accuracy_score(y_train, y_train_pred))
+        train_auc = float(roc_auc_score(y_train, y_train_proba))
+        train_rec = float(recall_score(y_train, y_train_pred, zero_division=0))
+        train_prec = float(precision_score(y_train, y_train_pred, zero_division=0))
+        train_f1 = float(f1_score(y_train, y_train_pred, zero_division=0))
+        train_cm = confusion_matrix(y_train, y_train_pred).tolist()
 
         # Evaluate on unseen test data
         y_pred = clf.predict(X_test_trans)
@@ -156,10 +158,18 @@ def train_and_evaluate_all():
             "f1": round(f1, 4),
             "roc_auc": round(auc, 4),
             "confusion_matrix": cm,
-            "roc_curve": roc_data
+            "roc_curve": roc_data,
+            "train_metrics": {
+                "accuracy": round(train_acc, 4),
+                "roc_auc": round(train_auc, 4),
+                "recall": round(train_rec, 4),
+                "precision": round(train_prec, 4),
+                "f1": round(train_f1, 4),
+                "confusion_matrix": train_cm
+            }
         }
 
-        print(f"{model_name} Results: AUC={auc:.4f}, Recall={rec:.4f}, Prec={prec:.4f}, F1={f1:.4f}, Acc={acc:.4f}")
+        print(f"{model_name} Test: Acc={acc*100:.2f}%, AUC={auc:.4f} | Train Acc={train_acc*100:.2f}%, Train AUC={train_auc:.4f}")
 
     # 5. Fit SHAP Explainer (Primary Model: Random Forest & XGBoost)
     print("\n--- Initializing SHAP Explainers ---")

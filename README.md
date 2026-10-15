@@ -57,8 +57,7 @@ Explainable-Loan-Default/
 │       ├── prediction_page.py  # Page 3: Interactive Applicant Scoring Form
 │       ├── shap_page.py        # Page 4: Explainable AI with SHAP
 │       ├── models_page.py      # Page 5: Model Evaluation & Metric Comparison
-│       ├── whatif_page.py      # Page 6: Counterfactual Scenario Simulator
-│       └── about_page.py       # Page 7: Technical Methodology & Ethical Guidelines
+│       └── whatif_page.py      # Page 6: Counterfactual Scenario Simulator
 │
 ├── app.py                      # Streamlit application entry point
 ├── requirements.txt            # Python dependencies

@@ -145,8 +145,7 @@ def test_verification_suite():
     from src.ui_pages.shap_page import render_shap_page
     from src.ui_pages.models_page import render_models_page
     from src.ui_pages.whatif_page import render_whatif_page
-    from src.ui_pages.about_page import render_about_page
-    print(" PASS: All 7 page modules imported cleanly without syntax or dependency errors.")
+    print(" PASS: All 6 active page modules imported cleanly without syntax or dependency errors.")
 
     print("\n" + "=" * 70)
     print("ALL 10 VERIFICATION CHECKS PASSED PERFECTLY!")

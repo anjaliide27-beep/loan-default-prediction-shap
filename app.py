@@ -24,7 +24,6 @@ from src.ui_pages.prediction_page import render_prediction_page
 from src.ui_pages.shap_page import render_shap_page
 from src.ui_pages.models_page import render_models_page
 from src.ui_pages.whatif_page import render_whatif_page
-from src.ui_pages.about_page import render_about_page
 from src.train_model import train_and_evaluate_all
 
 # 3. Inject Custom Styling
@@ -51,8 +50,7 @@ def main():
         "🎯 Loan Default Prediction": render_prediction_page,
         "🔍 Explainable AI (SHAP)": render_shap_page,
         "⚖️ Model Comparison": render_models_page,
-        "🔄 What-If Analysis": render_whatif_page,
-        "ℹ️ About the Project": render_about_page
+        "🔄 What-If Analysis": render_whatif_page
     }
 
     selected_page_name = st.sidebar.radio(

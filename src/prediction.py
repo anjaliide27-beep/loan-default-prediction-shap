@@ -11,6 +11,7 @@ import joblib
 import pandas as pd
 import numpy as np
 from src.data_processing import (
+    clean_raw_data,
     format_user_input,
     NUMERICAL_FEATURES,
     CATEGORICAL_FEATURES
@@ -216,3 +217,86 @@ def predict_loan_default(
         "feature_names": metadata["feature_names"],
         "friendly_feature_names": metadata["friendly_feature_names"]
     }
+
+
+def predict_batch(
+    df: pd.DataFrame,
+    model_name: str = DEFAULT_MODEL_NAME,
+    models_dir: str = MODELS_DIR,
+    low_threshold: float = DEFAULT_LOW_THRESHOLD,
+    med_threshold: float = DEFAULT_MED_THRESHOLD
+) -> dict:
+    """
+    Processes an uploaded DataFrame in batch, runs inference through the
+    pre-fitted ColumnTransformer and selected model, and assigns risk tiers.
+    """
+    if df is None or len(df) == 0:
+        return {"success": False, "errors": ["Uploaded dataset is empty."]}
+
+    preprocessor, models, metrics, metadata = load_model_artifacts(models_dir)
+    if model_name not in models:
+        return {"success": False, "errors": [f"Model '{model_name}' not found."]}
+
+    model = models[model_name]
+    cleaned_df = clean_raw_data(df)
+
+    expected_cols = NUMERICAL_FEATURES + CATEGORICAL_FEATURES
+    missing_cols = [c for c in expected_cols if c not in cleaned_df.columns]
+
+    # Fill any missing columns with NaN so ColumnTransformer SimpleImputer can handle them safely
+    X_input = cleaned_df.copy()
+    for col in expected_cols:
+        if col not in X_input.columns:
+            X_input[col] = np.nan
+
+    X_features = X_input[expected_cols]
+    X_trans = preprocessor.transform(X_features)
+
+    probabilities = model.predict_proba(X_trans)[:, 1]
+    predictions = (probabilities >= 0.5).astype(int)
+
+    # Assign risk tiers
+    risk_tiers = []
+    for p in probabilities:
+        if p < low_threshold:
+            risk_tiers.append("Low")
+        elif p < med_threshold:
+            risk_tiers.append("Medium")
+        else:
+            risk_tiers.append("High")
+
+    # Create scored output DataFrame
+    scored_df = df.copy()
+    scored_df.insert(0, "Predicted_Risk_Tier", risk_tiers)
+    scored_df.insert(1, "Default_Probability (%)", (probabilities * 100).round(2))
+    scored_df.insert(2, "Predicted_Outcome", np.where(predictions == 1, "Default (1)", "Fully Paid (0)"))
+
+    # Compute batch statistics
+    total_count = len(scored_df)
+    tier_counts = pd.Series(risk_tiers).value_counts().to_dict()
+    low_cnt = tier_counts.get("Low", 0)
+    med_cnt = tier_counts.get("Medium", 0)
+    high_cnt = tier_counts.get("High", 0)
+
+    summary = {
+        "total_records": total_count,
+        "avg_probability_pct": round(float(np.mean(probabilities) * 100), 2),
+        "low_risk_count": low_cnt,
+        "med_risk_count": med_cnt,
+        "high_risk_count": high_cnt,
+        "low_risk_pct": round(low_cnt / max(1, total_count) * 100, 1),
+        "med_risk_pct": round(med_cnt / max(1, total_count) * 100, 1),
+        "high_risk_pct": round(high_cnt / max(1, total_count) * 100, 1),
+        "missing_features_imputed": missing_cols
+    }
+
+    return {
+        "success": True,
+        "scored_df": scored_df,
+        "summary": summary,
+        "X_trans": X_trans,
+        "probabilities": probabilities,
+        "risk_tiers": risk_tiers,
+        "model_name": model_name
+    }
+

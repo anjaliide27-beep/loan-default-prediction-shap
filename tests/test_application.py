@@ -23,6 +23,7 @@ from src.data_processing import (
 )
 from src.prediction import (
     predict_loan_default,
+    predict_batch,
     validate_user_inputs,
     load_model_artifacts
 )
@@ -147,8 +148,19 @@ def test_verification_suite():
     from src.ui_pages.whatif_page import render_whatif_page
     print(" PASS: All 6 active page modules imported cleanly without syntax or dependency errors.")
 
+    # 11. Batch dataset prediction and risk scoring
+    print("\n[CHECK 11] Batch Dataset Prediction & Risk Scoring...")
+    sample_batch = df.head(15).copy()
+    batch_res = predict_batch(sample_batch, model_name="Random Forest")
+    assert batch_res["success"] is True, f"Batch prediction failed: {batch_res.get('errors')}"
+    assert len(batch_res["scored_df"]) == 15, "Batch scored dataframe length mismatch!"
+    assert "Predicted_Risk_Tier" in batch_res["scored_df"].columns, "Predicted_Risk_Tier column missing!"
+    assert "Default_Probability (%)" in batch_res["scored_df"].columns, "Default_Probability column missing!"
+    assert batch_res["summary"]["total_records"] == 15, "Summary total_records mismatch!"
+    print(f" PASS: Batch prediction successfully scored 15 records. Avg probability = {batch_res['summary']['avg_probability_pct']}%.")
+
     print("\n" + "=" * 70)
-    print("ALL 10 VERIFICATION CHECKS PASSED PERFECTLY!")
+    print("ALL 11 VERIFICATION CHECKS PASSED PERFECTLY!")
     print("=" * 70)
 
 

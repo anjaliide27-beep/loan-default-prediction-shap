@@ -24,7 +24,6 @@ from src.ui_pages.prediction_page import render_prediction_page
 from src.ui_pages.shap_page import render_shap_page
 from src.ui_pages.models_page import render_models_page
 from src.ui_pages.whatif_page import render_whatif_page
-from src.train_model import train_and_evaluate_all
 
 # 3. Inject Custom Styling
 st.markdown(get_custom_css(), unsafe_allow_html=True)
@@ -61,18 +60,6 @@ def main():
     )
 
     st.sidebar.markdown("---")
-
-    # Safe Retraining trigger in sidebar
-    with st.sidebar.expander("🛠️ Pipeline Admin & Retraining"):
-        st.caption("Trigger full offline retraining and recalculate all evaluation metrics & SHAP explainers.")
-        if st.button("🔄 Retrain All Models", use_container_width=True):
-            with st.spinner("Retraining candidate models (Logistic Regression, Decision Tree, Random Forest, XGBoost)..."):
-                try:
-                    metrics_res = train_and_evaluate_all()
-                    st.success("Retraining complete! Metrics and explainers updated.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Retraining failed: {e}")
 
     # App Info & Footnote
     st.sidebar.markdown("""

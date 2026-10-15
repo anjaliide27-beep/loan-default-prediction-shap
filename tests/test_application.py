@@ -57,7 +57,7 @@ def test_verification_suite():
     X = cleaned[NUMERICAL_FEATURES + CATEGORICAL_FEATURES]
     X_trans = preprocessor.fit_transform(X)
     assert not np.isnan(X_trans).any(), "Found NaNs in transformed feature matrix!"
-    assert X_trans.shape[1] == 43, f"Expected 43 transformed features, got {X_trans.shape[1]}"
+    assert X_trans.shape[1] == 46, f"Expected 46 transformed features, got {X_trans.shape[1]}"
     print(f" PASS: Transformed shape {X_trans.shape}. Missing values imputed and categoricals encoded.")
 
     # 3. Training completed successfully & models saved

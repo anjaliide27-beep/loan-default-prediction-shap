@@ -29,7 +29,10 @@ NUMERICAL_FEATURES = [
     'revol_bal',
     'revol_util_clean',
     'total_acc',
-    'pub_rec_bankruptcies'
+    'pub_rec_bankruptcies',
+    'loan_to_income',
+    'installment_to_income',
+    'revol_to_income'
 ]
 
 CATEGORICAL_FEATURES = [
@@ -75,6 +78,9 @@ FEATURE_LABELS = {
     'revol_util_clean': 'Revolving Utilization (%)',
     'total_acc': 'Total Credit Lines',
     'pub_rec_bankruptcies': 'Bankruptcies',
+    'loan_to_income': 'Loan-to-Income Ratio',
+    'installment_to_income': 'Installment-to-Income Ratio',
+    'revol_to_income': 'Revolving Debt-to-Income Ratio',
     'grade': 'Loan Grade',
     'home_ownership_clean': 'Home Ownership',
     'verification_status': 'Income Verification',
@@ -135,6 +141,14 @@ def clean_raw_data(df: pd.DataFrame) -> pd.DataFrame:
     # Standardize home ownership (group rare 'NONE' or 'OTHER' together)
     if 'home_ownership' in data.columns and 'home_ownership_clean' not in data.columns:
         data['home_ownership_clean'] = data['home_ownership'].replace({'NONE': 'OTHER'})
+
+    # Financial ratio engineering
+    if 'annual_inc' in data.columns and 'loan_amnt' in data.columns:
+        data['loan_to_income'] = pd.to_numeric(data['loan_amnt'], errors='coerce') / (pd.to_numeric(data['annual_inc'], errors='coerce') + 1.0)
+    if 'annual_inc' in data.columns and 'installment' in data.columns:
+        data['installment_to_income'] = (pd.to_numeric(data['installment'], errors='coerce') * 12.0) / (pd.to_numeric(data['annual_inc'], errors='coerce') + 1.0)
+    if 'annual_inc' in data.columns and 'revol_bal' in data.columns:
+        data['revol_to_income'] = pd.to_numeric(data['revol_bal'], errors='coerce') / (pd.to_numeric(data['annual_inc'], errors='coerce') + 1.0)
 
     return data
 

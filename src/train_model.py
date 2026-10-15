@@ -99,18 +99,20 @@ def train_and_evaluate_all():
             random_state=42
         ),
         "Random Forest": RandomForestClassifier(
-            n_estimators=100,
-            max_depth=8,
-            min_samples_split=15,
-            min_samples_leaf=5,
+            n_estimators=150,
+            max_depth=10,
+            min_samples_split=10,
+            min_samples_leaf=4,
             class_weight="balanced",
             random_state=42,
             n_jobs=-1
         ),
         "XGBoost": XGBClassifier(
-            n_estimators=100,
+            n_estimators=150,
             max_depth=5,
-            learning_rate=0.1,
+            learning_rate=0.08,
+            subsample=0.85,
+            colsample_bytree=0.85,
             scale_pos_weight=scale_pos_weight,
             random_state=42,
             eval_metric="logloss"

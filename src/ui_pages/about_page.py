@@ -80,11 +80,8 @@ def render_about_page():
        - Evaluates cluster quality using the silhouette coefficient:
          $$s(i) = \\frac{b(i) - a(i)}{\\max(a(i), b(i))}$$
          where $a(i)$ is mean intra-cluster distance and $b(i)$ is mean nearest-cluster distance.
-    6. **Davies–Bouldin Index (DBI):**
-       - Evaluates the average similarity between each cluster and its most similar counterpart:
-         $$DB = \\frac{1}{k} \\sum_{i=1}^{k} \\max_{j \\neq i} \\left( \\frac{s_i + s_j}{d(\\boldsymbol{\\mu}_i, \\boldsymbol{\\mu}_j)} \\right)$$
-         where $s_i$ is the average distance from points in cluster $i$ to centroid $\\boldsymbol{\\mu}_i$, and $d(\\boldsymbol{\\mu}_i, \\boldsymbol{\\mu}_j)$ is the centroid separation.
-       - **Lower values** generally indicate better cluster separation and compactness (bounded at minimum 0).
+    6. **2D Principal Component Projection (PCA):**
+       - Projects the 15-dimensional standardized space into two orthogonal principal components for intuitive visualization.
     """)
 
     st.markdown("---")

@@ -60,7 +60,7 @@ def render_home_page():
         **Core Architecture & Features:**
         - **Label-Free Feature Engineering:** Eliminates post-loan leakage variables and isolates target columns (`loan_status`). Standardizes 15 core financial attributes using `StandardScaler`.
         - **K-Means Clustering:** Identifies cohesive borrower segments with configurable cluster counts ($k \in [2, 6]$) and fixed random seeds for strict reproducibility.
-        - **Clustering Quality Evaluation:** Rigorous evaluation using Davies–Bouldin Index (DBI), Silhouette Coefficient, and Inertia (WCSS) to ensure optimal cluster separation and compactness.
+        - **2D Dimensionality Reduction (PCA):** Projects multi-dimensional standardized feature space into 2 principal components for clear visual separation.
         - **Cost-Sensitive Decision Support:** Translates cluster distributions into actionable operational servicing strategies and compares estimated portfolio expenditures.
         - **Actionable Counterfactual Recourse:** Identifies minimal plausible adjustments to actionable attributes (loan amount, DTI) that transition a borrower into a different cluster.
         """)
@@ -108,7 +108,7 @@ def render_home_page():
         <div class="metric-card" style="text-align: center;">
             <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">👥</div>
             <div style="font-weight: 700; color: #0F172A; margin-bottom: 0.25rem;">K-Means Clustering</div>
-            <div style="font-size: 0.8rem; color: #64748B;">Explore 2–6 clusters, Davies–Bouldin scores, silhouette metrics, and financial profiles.</div>
+            <div style="font-size: 0.8rem; color: #64748B;">Explore 2–6 clusters, silhouette separation scores, and 2D PCA projections.</div>
         </div>
         """, unsafe_allow_html=True)
     with q3:

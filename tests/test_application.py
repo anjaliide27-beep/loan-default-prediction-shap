@@ -5,7 +5,7 @@ Automated verification test suite for:
 Unsupervised Learning for Borrower Segmentation Using K-Means Clustering.
 
 Validates all pure unsupervised learning requirements, data leakage safeguards,
-K-Means pipeline fitting, Davies–Bouldin Index evaluation, cluster profiling,
+K-Means pipeline fitting, PCA visualization, cluster profiling,
 Cost-Sensitive Decision Support (Feature 1), and Counterfactual Borrower Recourse (Feature 5).
 """
 
@@ -77,22 +77,15 @@ def test_verification_suite():
     assert len(cluster_res["distribution_df"]) == 3, "Distribution dataframe missing cluster rows"
     print(f" PASS: K-Means successfully partitioned {cluster_res['n_records']} records into {cluster_res['n_clusters']} clusters.")
 
-    # 5. Davies–Bouldin Index (DBI) & Inertia (WCSS)
-    print("\n[CHECK 5] Davies–Bouldin Index & Performance Metrics Computation...")
-    from sklearn.metrics import davies_bouldin_score
-    dbi = cluster_res.get("davies_bouldin_index")
-    assert dbi is not None, "Davies–Bouldin Index was not computed in cluster results!"
-    assert dbi > 0.0, f"Davies–Bouldin Index must be positive, got {dbi}"
-    
-    # Verify DBI is recalculated when cluster count changes
-    cluster_res_k4 = run_kmeans_segmentation(sample_df, n_clusters=4, random_state=42)
-    dbi_k4 = cluster_res_k4.get("davies_bouldin_index")
-    assert dbi_k4 is not None, "DBI not computed for k=4"
-    assert dbi_k4 != dbi, "DBI must update dynamically when cluster count changes"
-
-    # Verify Inertia / WCSS
-    assert "inertia" in cluster_res and cluster_res["inertia"] > 0, "Inertia invalid or missing"
-    print(f" PASS: Davies–Bouldin Index verified (k=3: {dbi:.4f}, k=4: {dbi_k4:.4f}). Inertia: {cluster_res['inertia']:,.1f}.")
+    # 5. 2D PCA Dimensionality Reduction
+    print("\n[CHECK 5] 2D PCA Dimensionality Reduction...")
+    pca_df = cluster_res["pca_df"]
+    assert "PC1" in pca_df.columns and "PC2" in pca_df.columns, "PC1/PC2 columns missing from PCA dataframe"
+    assert "Cluster" in pca_df.columns, "Cluster label missing from PCA dataframe"
+    assert len(pca_df) == len(sample_df), "PCA dataframe length mismatch"
+    var_exp = cluster_res["pca_explained_variance"]
+    assert len(var_exp) == 2 and sum(var_exp) > 0, "PCA explained variance invalid"
+    print(f" PASS: 2D PCA projected {len(pca_df)} points. Total variance explained: {sum(var_exp)*100:.1f}%.")
 
     # 6. Silhouette Score Calculation
     print("\n[CHECK 6] Silhouette Score Computation...")

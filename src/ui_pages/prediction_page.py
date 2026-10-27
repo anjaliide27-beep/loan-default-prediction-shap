@@ -19,7 +19,24 @@ from src.prediction import (
     DEFAULT_LOW_THRESHOLD,
     DEFAULT_MED_THRESHOLD
 )
+from src.cost_optimization import (
+    get_validation_data_and_probabilities,
+    optimize_decision_threshold
+)
 from src.ui_pages.styles import render_disclaimer, render_metric_card
+
+
+@st.cache_data(show_spinner=False)
+def load_val_predictions_cached(model_name: str):
+    """Loads validation predictions for cost-sensitive threshold optimization with caching."""
+    data_path = os.path.join("data", "loan_train.csv")
+    if not os.path.exists(data_path):
+        return None
+    try:
+        return get_validation_data_and_probabilities(data_path, model_name=model_name)
+    except Exception:
+        return None
+
 
 # Realistic presets for 1-click demonstration
 PRESETS = {
@@ -322,6 +339,142 @@ def render_prediction_page():
                 """, unsafe_allow_html=True)
 
                 st.info("💡 **Next Step:** Navigate to **Explainable AI (SHAP)** in the sidebar to view the mathematical breakdown of features driving this specific prediction.")
+
+        # ---------------- COST-SENSITIVE THRESHOLD OPTIMIZATION ----------------
+        st.markdown("---")
+        st.markdown("### 💰 Cost-Sensitive Decision Threshold Optimization")
+        st.caption("Future Scope Item 1: Optimizing the operational classification cutoff to minimize asymmetric financial error costs.")
+
+        col_c1, col_c2 = st.columns(2)
+        with col_c1:
+            c_fn = st.number_input(
+                "False-Negative Cost ($C_FN) - Missed Default:",
+                min_value=500.0,
+                max_value=50000.0,
+                value=5000.0,
+                step=500.0,
+                help="Financial charge-off loss when a defaulting borrower is erroneously approved."
+            )
+        with col_c2:
+            c_fp = st.number_input(
+                "False-Positive Cost ($C_FP) - Unnecessary Rejection:",
+                min_value=100.0,
+                max_value=20000.0,
+                value=1000.0,
+                step=100.0,
+                help="Opportunity cost and lost origination revenue when a creditworthy borrower is rejected."
+            )
+
+        val_data = load_val_predictions_cached(selected_model)
+        if val_data is None:
+            st.warning("⚠️ Validation dataset unavailable. Falling back to manual decision threshold adjustment.")
+            manual_th = st.slider("Manual Decision Threshold:", min_value=0.05, max_value=0.95, value=0.50, step=0.01)
+            st.info(f"Manual threshold set to {manual_th*100:.1f}%. Applicants with probability >= {manual_th*100:.1f}% are flagged as Default Risk.")
+        else:
+            opt_res = optimize_decision_threshold(
+                val_data["y_true"],
+                val_data["y_proba"],
+                c_fn=float(c_fn),
+                c_fp=float(c_fp)
+            )
+
+            m_c1, m_c2, m_c3, m_c4 = st.columns(4)
+            with m_c1:
+                st.markdown(render_metric_card(
+                    "Optimal Cutoff (τ*)",
+                    f"{opt_res['optimal_threshold']*100:.1f}%",
+                    "Default Baseline: 50.0%"
+                ), unsafe_allow_html=True)
+            with m_c2:
+                st.markdown(render_metric_card(
+                    "Validation Total Cost",
+                    f"${opt_res['optimal_cost']:,.0f}",
+                    f"Baseline Cost: ${opt_res['default_cost']:,.0f}"
+                ), unsafe_allow_html=True)
+            with m_c3:
+                st.markdown(render_metric_card(
+                    "Projected Cost Savings",
+                    f"${opt_res['cost_savings']:,.0f}",
+                    f"-{opt_res['cost_savings_pct']:.1f}% Total Loss Reduction"
+                ), unsafe_allow_html=True)
+            with m_c4:
+                st.markdown(render_metric_card(
+                    "Validation Error Shift",
+                    f"FN: {opt_res['optimal_fn']:,}",
+                    f"FP: {opt_res['optimal_fp']:,} (Baseline FN: {opt_res['default_fn']:,})"
+                ), unsafe_allow_html=True)
+
+            # Interactive Plotly Cost Curve
+            df_curve = opt_res["cost_curve_df"]
+            fig_cost = go.Figure()
+            fig_cost.add_trace(go.Scatter(
+                x=df_curve["threshold"] * 100.0,
+                y=df_curve["total_cost"],
+                mode='lines',
+                name='Total Cost ($)',
+                line=dict(color='#0F766E', width=3)
+            ))
+            fig_cost.add_trace(go.Scatter(
+                x=[opt_res["optimal_threshold"] * 100.0],
+                y=[opt_res["optimal_cost"]],
+                mode='markers+text',
+                name=f'Optimal τ* ({opt_res["optimal_threshold"]*100:.1f}%)',
+                marker=dict(color='#DC2626', size=12, symbol='star'),
+                text=[f"Min Cost: ${opt_res['optimal_cost']:,.0f}"],
+                textposition='top center'
+            ))
+            fig_cost.add_trace(go.Scatter(
+                x=[50.0],
+                y=[opt_res["default_cost"]],
+                mode='markers+text',
+                name='Default 50% Threshold',
+                marker=dict(color='#64748B', size=10, symbol='circle'),
+                text=[f"Cost @ 50%: ${opt_res['default_cost']:,.0f}"],
+                textposition='bottom center'
+            ))
+            fig_cost.update_layout(
+                title=f"Validation Total Error Cost Curve vs. Decision Threshold ({selected_model})",
+                xaxis=dict(title="Decision Threshold (%)", gridcolor="#F1F5F9"),
+                yaxis=dict(title="Total Illustrative Error Cost ($)", gridcolor="#F1F5F9"),
+                plot_bgcolor="#FFFFFF",
+                paper_bgcolor="#FFFFFF",
+                height=350,
+                margin=dict(t=35, b=30, l=60, r=20),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_cost, use_container_width=True)
+
+            # Impact on current applicant if available
+            curr_pred = st.session_state.get("current_prediction")
+            if curr_pred and curr_pred.get("success"):
+                p_val = curr_pred["probability"]
+                opt_th = opt_res["optimal_threshold"]
+                default_class = "Default Risk (Flagged)" if p_val >= 0.50 else "Repay (Approved)"
+                opt_class = "Default Risk (Flagged)" if p_val >= opt_th else "Repay (Approved)"
+
+                status_color = "#DC2626" if opt_class.startswith("Default") else "#0F766E"
+
+                st.markdown(f"""
+                <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-left: 5px solid {status_color}; border-radius: 8px; padding: 1rem 1.25rem; margin-top: 0.5rem; margin-bottom: 1rem;">
+                    <div style="font-size: 0.95rem; font-weight: 700; color: #0F172A; margin-bottom: 0.35rem;">
+                        Operational Decision Impact for Current Applicant
+                    </div>
+                    <div style="font-size: 0.88rem; color: #334155; line-height: 1.5;">
+                        • <strong>Model Predicted Default Probability:</strong> <code>{p_val*100:.1f}%</code> (Unchanged - model is not retrained)<br>
+                        • <strong>Decision at Standard 0.50 Threshold:</strong> <strong>{default_class}</strong> (Probability {'≥' if p_val >= 0.50 else '<'} 50.0%)<br>
+                        • <strong>Decision at Cost-Optimal Threshold ({opt_th*100:.1f}%):</strong> <strong style="color: {status_color};">{opt_class}</strong> (Probability {'≥' if p_val >= opt_th else '<'} {opt_th*100:.1f}%)<br>
+                        <em>Note: Because missed defaults ($C_FN=${c_fn:,.0f}) are more expensive than unnecessary rejections ($C_FP=${c_fp:,.0f}), the optimal policy lowers the cutoff to protect portfolio capital.</em>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                st.info("💡 **Tip:** Submit a loan application above or load a preset profile to observe how the cost-optimal cutoff classifies that specific borrower.")
+
+            st.markdown(render_disclaimer(
+                "Cost-Sensitive Safeguards: Decision thresholds are evaluated strictly on an independent validation partition "
+                "(20% stratified subset of training data, random_state=99) completely isolated from model training and held-out test data. "
+                "Cost parameters ($C_FN and $C_FP) are illustrative simulation values to model asymmetric credit risk and do not constitute actual lender underwriting mandates."
+            ), unsafe_allow_html=True)
 
     # ---------------- TAB 2: BATCH DATASET UPLOAD ----------------
     with tab_batch:

@@ -10,7 +10,8 @@ import numpy as np
 import plotly.graph_objects as go
 
 from src.prediction import predict_loan_default
-from src.ui_pages.styles import render_disclaimer
+from src.counterfactuals import generate_actionable_counterfactuals
+from src.ui_pages.styles import render_disclaimer, render_metric_card
 from src.ui_pages.prediction_page import PRESETS
 
 
@@ -159,8 +160,109 @@ def render_whatif_page():
         ]
         st.dataframe(pd.DataFrame(diff_data).set_index("Attribute"), use_container_width=True)
 
+    # ---------------- 3. ACTIONABLE COUNTERFACTUAL RECOMMENDATIONS ----------------
+    st.markdown("---")
+    st.markdown('<div class="section-header">🎯 Actionable Counterfactual Recommendations</div>', unsafe_allow_html=True)
+    st.markdown("""
+    **Future Scope Item 5 (Actionable Recourse):** Instead of manual trial-and-error slider adjustments, 
+    this algorithmic recourse search identifies the **smallest plausible modifications** to actionable attributes 
+    (loan amount, DTI, annual income) required to alter the predicted classification to a favorable decision.
+    """)
+
+    col_cf_ctrl1, col_cf_ctrl2 = st.columns([1.5, 2.5])
+    with col_cf_ctrl1:
+        cf_threshold = st.slider(
+            "Target Decision Cutoff (τ):",
+            min_value=0.15,
+            max_value=0.50,
+            value=0.35,
+            step=0.05,
+            help="Cutoff above which a borrower is classified as Default Risk. The search looks for recourse that brings probability below this threshold or into the Low Risk tier."
+        )
+    with col_cf_ctrl2:
+        st.markdown("""
+        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.65rem 0.9rem; font-size: 0.82rem; color: #475569; margin-top: 0.25rem;">
+            <strong>Recourse Safeguards:</strong> Immutable historical credit bureau records (past delinquencies, bankruptcies, inquiries) 
+            are strictly preserved. Only actionable financial terms within borrower control are adjusted.
+        </div>
+        """, unsafe_allow_html=True)
+
+    # Compute counterfactuals
+    cf_res = generate_actionable_counterfactuals(
+        base_input,
+        model_name=selected_model,
+        decision_threshold=cf_threshold,
+        max_recommendations=4
+    )
+
+    if not cf_res["success"]:
+        st.error(f"Error during counterfactual search: {cf_res.get('errors')}")
+    elif cf_res["is_favorably_classified"]:
+        st.markdown(f"""
+        <div style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-left: 5px solid #16A34A; border-radius: 8px; padding: 1.1rem 1.35rem; margin: 1rem 0;">
+            <div style="font-size: 1rem; font-weight: 700; color: #166534; margin-bottom: 0.35rem;">
+                ✅ Borrower Already Favorably Classified (Low Default Risk)
+            </div>
+            <div style="font-size: 0.88rem; color: #14532D; line-height: 1.5;">
+                {cf_res['message']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    elif cf_res["valid_count"] == 0:
+        st.markdown(f"""
+        <div style="background-color: #FFFBEB; border: 1px solid #FDE68A; border-left: 5px solid #D97706; border-radius: 8px; padding: 1.1rem 1.35rem; margin: 1rem 0;">
+            <div style="font-size: 1rem; font-weight: 700; color: #92400E; margin-bottom: 0.35rem;">
+                ⚠️ No Valid Actionable Counterfactual Found Within Plausible Bounds
+            </div>
+            <div style="font-size: 0.88rem; color: #78350F; line-height: 1.5;">
+                {cf_res['message']}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"**Found {cf_res['valid_count']} plausible counterfactual recommendations** that flip the classification:")
+
+        for i, rec in enumerate(cf_res["recommendations"], 1):
+            col_r1, col_r2, col_r3, col_r4 = st.columns([1.5, 1.2, 1.3, 1.0])
+            with col_r1:
+                st.markdown(f"""
+                <div style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">
+                    Option {i}: {rec['feature_label']}
+                </div>
+                <div style="font-size: 0.82rem; color: #64748B;">
+                    {rec['change_desc']}
+                </div>
+                """, unsafe_allow_html=True)
+            with col_r2:
+                st.markdown(f"""
+                <div style="font-size: 0.82rem; color: #64748B;">Original vs. Suggested:</div>
+                <div style="font-size: 0.9rem; font-weight: 600; color: #0F172A;">
+                    <code>{rec['original_val']}</code> ➔ <code style="color: #0F766E; font-weight: 700;">{rec['suggested_val']}</code>
+                </div>
+                """, unsafe_allow_html=True)
+            with col_r3:
+                st.markdown(f"""
+                <div style="font-size: 0.82rem; color: #64748B;">Probability & Classification:</div>
+                <div style="font-size: 0.9rem; font-weight: 600;">
+                    <span style="color: #DC2626;">{rec['base_proba']*100:.1f}% ({rec['base_tier']})</span> ➔ 
+                    <span style="color: #16A34A; font-weight: 700;">{rec['new_proba']*100:.1f}% ({rec['new_tier']})</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #16A34A; font-weight: 600;">
+                    ↓ -{rec['proba_reduction_pct']:.1f}% Risk Reduction
+                </div>
+                """, unsafe_allow_html=True)
+            with col_r4:
+                st.markdown(f"""
+                <div style="padding-top: 0.35rem;">
+                    <span class="badge badge-teal" style="font-size: 0.8rem; padding: 0.35rem 0.65rem;">
+                        {rec['new_tier']} Risk
+                    </span>
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown("<hr style='margin: 0.5rem 0 0.75rem 0; border: 0; border-top: 1px dashed #E2E8F0;'>", unsafe_allow_html=True)
+
     st.markdown(render_disclaimer(
-        "What-if simulations evaluate mathematical sensitivity across model features. "
-        "These scenarios do not constitute causal estimates or guarantees that modifying individual parameters "
-        "in isolation will produce equivalent credit outcomes in real-world lending markets."
+        "Recourse Advisory Notice: All counterfactual recommendations are mathematical model sensitivity estimates "
+        "designed to explain algorithmic decisions. They do not constitute financial advice, credit counseling, or guaranteed loan approval. "
+        "Real-world credit issuance depends upon comprehensive lender underwriting and credit policy validation."
     ), unsafe_allow_html=True)

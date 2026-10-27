@@ -147,7 +147,8 @@ def test_verification_suite():
     from src.ui_pages.shap_page import render_shap_page
     from src.ui_pages.models_page import render_models_page
     from src.ui_pages.whatif_page import render_whatif_page
-    print(" PASS: All 7 active page modules imported cleanly without syntax or dependency errors.")
+    from src.ui_pages.clustering_page import render_clustering_page
+    print(" PASS: All 8 active page modules imported cleanly without syntax or dependency errors.")
 
     # 11. Batch dataset prediction and risk scoring
     print("\n[CHECK 11] Batch Dataset Prediction & Risk Scoring...")
@@ -160,10 +161,53 @@ def test_verification_suite():
     assert batch_res["summary"]["total_records"] == 15, "Summary total_records mismatch!"
     print(f" PASS: Batch prediction successfully scored 15 records. Avg probability = {batch_res['summary']['avg_probability_pct']}%.")
 
+    # 12. Feature 1: K-Means Borrower Segmentation (Unsupervised Learning)
+    print("\n[CHECK 12] Feature 1: K-Means Clustering & Leakage Safeguards...")
+    from src.clustering import run_kmeans_segmentation
+    cluster_res = run_kmeans_segmentation(df.head(500), n_clusters=3, random_state=42)
+    assert cluster_res["n_clusters"] == 3, "K-Means cluster count mismatch!"
+    assert TARGET_COL not in cluster_res["features_used"], "TARGET_COL leaked into clustering features!"
+    for lk in LEAKAGE_COLUMNS:
+        assert lk not in cluster_res["features_used"], f"Leakage column {lk} leaked into clustering features!"
+    for id_col in IDENTIFIER_COLUMNS:
+        assert id_col not in cluster_res["features_used"], f"Identifier {id_col} leaked into clustering features!"
+    assert len(cluster_res["distribution_df"]) == 3, "Distribution dataframe must have 3 clusters"
+    assert cluster_res["pca_df"].shape[1] >= 4, "PCA dataframe missing projection columns"
+    print(f" PASS: K-Means successfully segmented cohort into 3 clusters using {len(cluster_res['features_used'])} features. Target and leakage strictly excluded.")
+
+    # 13. Feature 2: Cost-Sensitive Decision Threshold Optimization
+    print("\n[CHECK 13] Feature 2: Cost-Sensitive Threshold Optimization...")
+    from src.cost_optimization import get_validation_data_and_probabilities, optimize_decision_threshold
+    val_info = get_validation_data_and_probabilities(data_path, model_name="Random Forest")
+    assert val_info["success"] is True, "Validation data extraction failed!"
+    assert val_info["n_validation_samples"] == 4321, f"Expected 4,321 validation samples, got {val_info['n_validation_samples']}"
+    opt_cost_res = optimize_decision_threshold(val_info["y_true"], val_info["y_proba"], c_fn=5000.0, c_fp=1000.0)
+    assert 0.05 <= opt_cost_res["optimal_threshold"] <= 0.95, "Optimal threshold out of bounds!"
+    assert opt_cost_res["cost_savings"] > 0, "Optimal threshold failed to reduce total error cost vs default 0.50!"
+    print(f" PASS: Optimal threshold tau* = {opt_cost_res['optimal_threshold']:.2f}. Total validation savings = ${opt_cost_res['cost_savings']:,.0f} ({opt_cost_res['cost_savings_pct']:.1f}% reduction).")
+
+    # 14. Feature 3: Actionable Counterfactual Recourse
+    print("\n[CHECK 14] Feature 3: Actionable Counterfactual Recourse...")
+    from src.counterfactuals import generate_actionable_counterfactuals, IMMUTABLE_FEATURES
+    # Test on an elevated risk applicant
+    elevated_input = dict(PRESETS["⚖️ Average Borrower (Moderate Risk Profile)"])
+    elevated_input["dti"] = 28.0
+    elevated_input["loan_amnt"] = 25000
+    cf_res = generate_actionable_counterfactuals(elevated_input, model_name="Random Forest", decision_threshold=0.25)
+    assert cf_res["success"] is True, "Counterfactual generation failed!"
+    assert cf_res["valid_count"] > 0, "Expected valid counterfactual recourse recommendations for elevated borrower!"
+    for r in cf_res["recommendations"]:
+        for imm in IMMUTABLE_FEATURES:
+            if imm in elevated_input:
+                assert r["input_data"][imm] == elevated_input[imm], f"Immutable feature {imm} was modified!"
+        assert r["new_proba"] < r["base_proba"], "Recommended counterfactual did not reduce default probability!"
+    print(f" PASS: Found {cf_res['valid_count']} recourse recommendations for elevated borrower. Immutable credit history strictly preserved.")
+
     print("\n" + "=" * 70)
-    print("ALL 11 VERIFICATION CHECKS PASSED PERFECTLY!")
+    print("ALL 14 VERIFICATION CHECKS PASSED PERFECTLY!")
     print("=" * 70)
 
 
 if __name__ == "__main__":
     test_verification_suite()
+

@@ -25,6 +25,7 @@ from src.ui_pages.prediction_page import render_prediction_page
 from src.ui_pages.shap_page import render_shap_page
 from src.ui_pages.models_page import render_models_page
 from src.ui_pages.whatif_page import render_whatif_page
+from src.ui_pages.clustering_page import render_clustering_page
 
 # 3. Inject Custom Styling
 st.markdown(get_custom_css(), unsafe_allow_html=True)
@@ -48,6 +49,7 @@ def main():
         "🏠 Home Dashboard": render_home_page,
         "📁 Upload Dataset & Predict Risk": render_upload_page,
         "📊 Exploratory Data Analysis": render_eda_page,
+        "👥 Borrower Segmentation (K-Means)": render_clustering_page,
         "🎯 Loan Default Prediction": render_prediction_page,
         "🔍 Explainable AI (SHAP)": render_shap_page,
         "⚖️ Model Comparison": render_models_page,

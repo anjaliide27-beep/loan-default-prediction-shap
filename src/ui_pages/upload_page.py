@@ -150,14 +150,15 @@ def render_upload_page():
     with m2:
         st.markdown(render_metric_card("Discovered Clusters", f"{c_res['n_clusters']}", f"{len(c_res['features_used'])} Features Used", "#10B981"), unsafe_allow_html=True)
     with m3:
-        sil_s = c_res["silhouette_score"]
-        sil_txt = f"{sil_s:.3f}" if sil_s is not None else "N/A"
-        st.markdown(render_metric_card("Silhouette Score", sil_txt, "Cluster Separation", "#8B5CF6"), unsafe_allow_html=True)
+        db_s = c_res.get("davies_bouldin_index")
+        db_txt = f"{db_s:.3f}" if db_s is not None else "N/A"
+        st.markdown(render_metric_card("Davies–Bouldin Index", db_txt, "Lower is preferred (Separation)", "#0284C7"), unsafe_allow_html=True)
     with m4:
-        pca_pct = sum(c_res["pca_explained_variance"]) * 100.0
-        st.markdown(render_metric_card("2D PCA Variance", f"{pca_pct:.1f}%", "Projection Coverage", "#F59E0B"), unsafe_allow_html=True)
+        sil_s = c_res.get("silhouette_score")
+        sil_txt = f"{sil_s:.3f}" if sil_s is not None else "N/A"
+        st.markdown(render_metric_card("Silhouette Score", sil_txt, "Higher is preferred [-1, +1]", "#8B5CF6"), unsafe_allow_html=True)
 
-    # Visualizations
+    # Visualizations & Performance Metrics
     col_v1, col_v2 = st.columns([1.1, 1.4])
     cluster_colors = ["#0F766E", "#0284C7", "#D97706", "#7C3AED", "#DC2626", "#059669"]
 
@@ -183,25 +184,48 @@ def render_upload_page():
         st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_v2:
-        st.markdown("##### 2D Principal Component Projection (PCA)")
-        pca_df = c_res["pca_df"]
-        plot_pca = pca_df.sample(min(3000, len(pca_df)), random_state=42)
-        fig_scatter = px.scatter(
-            plot_pca,
-            x="PCA_1",
-            y="PCA_2",
-            color="Cluster",
-            color_discrete_sequence=cluster_colors[:c_res['n_clusters']],
-            opacity=0.75
-        )
-        fig_scatter.update_layout(
-            plot_bgcolor="#FFFFFF",
-            xaxis=dict(title=f"Principal Component 1 ({c_res['pca_explained_variance'][0]*100:.1f}%)", gridcolor="#F1F5F9"),
-            yaxis=dict(title=f"Principal Component 2 ({c_res['pca_explained_variance'][1]*100:.1f}%)", gridcolor="#F1F5F9"),
-            height=340,
-            margin=dict(t=20, b=30, l=40, r=20)
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.markdown("##### Clustering Evaluation & Quality Metrics")
+        db_val = c_res.get("davies_bouldin_index")
+        sil_val = c_res.get("silhouette_score")
+        inertia_val = c_res.get("inertia", 0.0)
+
+        db_disp = f"{db_val:.4f}" if db_val is not None else "Davies–Bouldin Index unavailable for this clustering configuration"
+        sil_disp = f"{sil_val:.4f}" if sil_val is not None else "Silhouette Score unavailable for this clustering configuration"
+        inertia_disp = f"{inertia_val:,.1f}"
+
+        st.markdown(f"""
+        <div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 1.1rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="margin-bottom: 0.85rem; padding-bottom: 0.65rem; border-bottom: 1px solid #F1F5F9;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-weight: 700; color: #0F172A; font-size: 0.92rem;">📊 Davies–Bouldin Index (DBI)</span>
+                    <span style="font-family: monospace; font-size: 1.1rem; font-weight: 800; color: #0284C7;">{db_disp}</span>
+                </div>
+                <div style="font-size: 0.76rem; color: #0D9488; font-weight: 600; margin-top: 2px;">
+                    Preference: <strong>Lower values generally indicate better cluster separation and compactness</strong>.
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 0.85rem; padding-bottom: 0.65rem; border-bottom: 1px solid #F1F5F9;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-weight: 700; color: #0F172A; font-size: 0.92rem;">🎯 Silhouette Coefficient</span>
+                    <span style="font-family: monospace; font-size: 1.1rem; font-weight: 800; color: #10B981;">{sil_disp}</span>
+                </div>
+                <div style="font-size: 0.76rem; color: #0D9488; font-weight: 600; margin-top: 2px;">
+                    Preference: <strong>Higher values are preferred</strong> (Range: [-1, +1]).
+                </div>
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-weight: 700; color: #0F172A; font-size: 0.92rem;">📐 Inertia (WCSS)</span>
+                    <span style="font-family: monospace; font-size: 1.1rem; font-weight: 800; color: #7C3AED;">{inertia_disp}</span>
+                </div>
+                <div style="font-size: 0.76rem; color: #0D9488; font-weight: 600; margin-top: 2px;">
+                    Preference: <strong>Lower values are preferred</strong> for a given number of clusters <em>k</em>.
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Download Clustered Dataset
     clustered_df = input_df.copy()

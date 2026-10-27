@@ -2,8 +2,8 @@
 clustering_page.py
 ------------------
 Interactive K-Means Borrower Segmentation Page.
-Enables dynamic exploration of cluster counts (k=2 to 6), 2D PCA projection,
-silhouette cohesion metrics, and downloadable segmented cohorts.
+Enables dynamic exploration of cluster counts (k=2 to 6), Davies–Bouldin and silhouette evaluation metrics,
+and downloadable segmented cohorts.
 """
 
 import os
@@ -89,29 +89,32 @@ def render_clustering_page():
             f"{len(results['features_used'])} Standardized Features"
         ), unsafe_allow_html=True)
     with m3:
-        sil_score = results["silhouette_score"]
+        db_score = results.get("davies_bouldin_index")
+        db_text = f"{db_score:.3f}" if db_score is not None else "N/A"
+        st.markdown(render_metric_card(
+            "Davies–Bouldin Index",
+            db_text,
+            "Lower is preferred • Separation & Compactness",
+            "#0284C7"
+        ), unsafe_allow_html=True)
+    with m4:
+        sil_score = results.get("silhouette_score")
         sil_text = f"{sil_score:.3f}" if sil_score is not None else "N/A"
         st.markdown(render_metric_card(
             "Silhouette Score",
             sil_text,
-            "Cluster cohesion & separation"
-        ), unsafe_allow_html=True)
-    with m4:
-        pca_var = sum(results["pca_explained_variance"]) * 100.0
-        st.markdown(render_metric_card(
-            "2D PCA Coverage",
-            f"{pca_var:.1f}%",
-            f"PC1: {results['pca_explained_variance'][0]*100:.1f}%, PC2: {results['pca_explained_variance'][1]*100:.1f}%"
+            "Higher is preferred • [-1 to +1]",
+            "#10B981"
         ), unsafe_allow_html=True)
 
-    # Visualizations Section
-    st.markdown("### 2. Segment Distribution & 2D Projection")
+    # Visualizations & Performance Metrics Section
+    st.markdown("### 2. Segment Distribution & Clustering Performance Evaluation")
     col_vis1, col_vis2 = st.columns([1.1, 1.4])
 
     cluster_colors = ["#0F766E", "#0284C7", "#D97706", "#7C3AED", "#DC2626", "#059669"]
 
     with col_vis1:
-        st.markdown("##### Borrower Count per Cluster")
+        st.markdown("##### Borrower Distribution by Segment")
         dist_df = results["distribution_df"]
         fig_bar = px.bar(
             dist_df,
@@ -134,36 +137,58 @@ def render_clustering_page():
         st.plotly_chart(fig_bar, use_container_width=True)
 
     with col_vis2:
-        st.markdown("##### 2D Principal Component Projection (PCA)")
-        pca_df = results["pca_df"]
-        plot_df = pca_df.sample(min(3500, len(pca_df)), random_state=42)
-        fig_scatter = px.scatter(
-            plot_df,
-            x="PCA_1",
-            y="PCA_2",
-            color="Cluster",
-            color_discrete_sequence=cluster_colors[:n_clusters],
-            hover_data={
-                "PCA_1": False,
-                "PCA_2": False,
-                "Cluster": True,
-                "loan_amnt": ":$,.0f",
-                "annual_inc": ":$,.0f",
-                "int_rate_clean": ":.1f%",
-                "dti": ":.1f%"
-            },
-            opacity=0.7
-        )
-        fig_scatter.update_layout(
-            plot_bgcolor="#FFFFFF",
-            paper_bgcolor="#FFFFFF",
-            xaxis=dict(title=f"Principal Component 1 ({results['pca_explained_variance'][0]*100:.1f}%)", gridcolor="#F1F5F9"),
-            yaxis=dict(title=f"Principal Component 2 ({results['pca_explained_variance'][1]*100:.1f}%)", gridcolor="#F1F5F9"),
-            height=370,
-            margin=dict(t=20, b=30, l=40, r=20),
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-        )
-        st.plotly_chart(fig_scatter, use_container_width=True)
+        st.markdown("##### Clustering Evaluation & Quality Metrics")
+        
+        db_val = results.get("davies_bouldin_index")
+        sil_val = results.get("silhouette_score")
+        inertia_val = results.get("inertia", 0.0)
+
+        db_display = f"{db_val:.4f}" if db_val is not None else "Davies–Bouldin Index unavailable for this clustering configuration"
+        sil_display = f"{sil_val:.4f}" if sil_val is not None else "Silhouette Score unavailable for this clustering configuration"
+        inertia_display = f"{inertia_val:,.1f}"
+
+        st.markdown(f"""
+        <div style="background-color: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 1.15rem; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid #F1F5F9;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">📊 Davies–Bouldin Index (DBI)</span>
+                    <span style="font-family: monospace; font-size: 1.15rem; font-weight: 800; color: #0284C7;">{db_display}</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #0D9488; font-weight: 600; margin-top: 3px;">
+                    Preference: <strong>Lower values generally indicate better cluster separation and compactness</strong> (Minimum: 0).
+                </div>
+                <div style="font-size: 0.8rem; color: #64748B; margin-top: 4px; line-height: 1.4;">
+                    Evaluates the similarity ratio between each cluster and its most similar neighbor, comparing intra-cluster spread against between-cluster centroid distances.
+                </div>
+            </div>
+            
+            <div style="margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid #F1F5F9;">
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">🎯 Silhouette Coefficient</span>
+                    <span style="font-family: monospace; font-size: 1.15rem; font-weight: 800; color: #10B981;">{sil_display}</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #0D9488; font-weight: 600; margin-top: 3px;">
+                    Preference: <strong>Higher values are preferred</strong> (Theoretical range: [-1, +1]).
+                </div>
+                <div style="font-size: 0.8rem; color: #64748B; margin-top: 4px; line-height: 1.4;">
+                    Quantifies how similar an individual borrower is to their assigned segment compared to points in neighboring segments.
+                </div>
+            </div>
+
+            <div>
+                <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                    <span style="font-weight: 700; color: #0F172A; font-size: 0.95rem;">📐 Inertia (Within-Cluster Sum of Squares)</span>
+                    <span style="font-family: monospace; font-size: 1.15rem; font-weight: 800; color: #7C3AED;">{inertia_display}</span>
+                </div>
+                <div style="font-size: 0.78rem; color: #0D9488; font-weight: 600; margin-top: 3px;">
+                    Preference: <strong>Lower values are preferred</strong> for a given number of clusters <em>k</em>.
+                </div>
+                <div style="font-size: 0.8rem; color: #64748B; margin-top: 4px; line-height: 1.4;">
+                    The cumulative sum of squared Euclidean distances from all borrower feature vectors to their respective cluster centroids.
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # Cluster Financial Profiles Table
     st.markdown("### 3. Cluster Financial Profile Comparison")

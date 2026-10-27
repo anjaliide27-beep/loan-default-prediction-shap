@@ -46,7 +46,7 @@ def main():
     st.sidebar.markdown("""
     <div style="background-color: #F0FDFA; border: 1px solid #99F6E4; border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.85rem; font-size: 0.82rem;">
         <div style="font-weight: 700; color: #0F766E;">⚡ Unsupervised K-Means Pipeline</div>
-        <div style="color: #115E59; font-size: 0.75rem;">15 Financial Features • Standardized PCA</div>
+        <div style="color: #115E59; font-size: 0.75rem;">15 Financial Features • Standardized Scaling</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -80,7 +80,7 @@ def main():
     <div style="padding-top: 1.5rem; font-size: 0.78rem; color: #94A3B8; line-height: 1.4;">
         <strong>AIML Mini-Project</strong><br>
         Algorithm: K-Means Clustering<br>
-        Dimensionality: 2D PCA Projection<br>
+        Evaluation: Davies–Bouldin & Silhouette<br>
         Decision: Segment Cost Optimization<br>
         Recourse: Euclidean Counterfactuals<br>
         Dataset: LendingClub (27,003 records)

@@ -3,7 +3,7 @@ clustering.py
 -------------
 Core Unsupervised Learning module for Borrower Segmentation using K-Means Clustering.
 Operates purely without supervision. Strictly excludes loan_status, IDs, and leakage columns.
-Provides pipeline fitting, instance prediction, 2D PCA projection, and cluster profiling.
+Provides pipeline fitting, instance prediction, clustering performance metrics (Silhouette, Davies-Bouldin, Inertia), and cluster profiling.
 """
 
 import os
@@ -12,8 +12,7 @@ import pandas as pd
 from typing import Dict, Any, List, Tuple, Optional
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, davies_bouldin_score
 from sklearn.impute import SimpleImputer
 
 from src.data_processing import (
@@ -154,8 +153,9 @@ def run_kmeans_segmentation(
     max_silhouette_samples: int = 3000
 ) -> Dict[str, Any]:
     """
-    Fits K-Means clustering, generates 2D PCA projections, calculates silhouette score,
-    and produces cluster profiles. Returns fitted pipeline objects for consistent downstream scoring.
+    Fits K-Means clustering, calculates performance evaluation metrics (Davies-Bouldin Index,
+    Silhouette Score, Inertia), and produces cluster profiles.
+    Returns fitted pipeline objects for consistent downstream scoring.
     """
     try:
         X_df, X_scaled, feature_names, scaler, imputer, target_series = prepare_clustering_data(df)
@@ -179,27 +179,10 @@ def run_kmeans_segmentation(
     cluster_names = [f"Cluster {i}" for i in range(n_clusters)]
     cluster_series = pd.Series([f"Cluster {i}" for i in labels], index=X_df.index, name="Cluster")
 
-    # 2. 2D PCA Projection
-    pca = PCA(n_components=2, random_state=random_state)
-    pca_coords = pca.fit_transform(X_scaled)
-    explained_var = pca.explained_variance_ratio_
-
-    pca_df = pd.DataFrame({
-        "PCA_1": pca_coords[:, 0],
-        "PCA_2": pca_coords[:, 1],
-        "PC1": pca_coords[:, 0],
-        "PC2": pca_coords[:, 1],
-        "Cluster": cluster_series,
-        "Cluster_ID": labels
-    }, index=X_df.index)
-
-    for hover_col in ['loan_amnt', 'annual_inc', 'int_rate_clean', 'dti', 'revol_util_clean']:
-        if hover_col in X_df.columns:
-            pca_df[hover_col] = X_df[hover_col]
-
-    # 3. Silhouette Score
+    # 2. Performance Evaluation Metrics
+    # A. Silhouette Score
     sil_score = None
-    if n_samples >= n_clusters * 2:
+    if n_samples >= n_clusters * 2 and len(np.unique(labels)) >= 2:
         try:
             if n_samples > max_silhouette_samples:
                 np.random.seed(random_state)
@@ -210,7 +193,20 @@ def run_kmeans_segmentation(
         except Exception:
             sil_score = None
 
-    # 4. Cluster Distribution & Statistics
+    # B. Davies–Bouldin Index (DBI)
+    # Valid only when there are at least two distinct clusters and k < n_samples
+    db_index = None
+    unique_clusters = len(np.unique(labels))
+    if unique_clusters >= 2 and unique_clusters < n_samples:
+        try:
+            db_index = float(davies_bouldin_score(X_scaled, labels))
+        except Exception:
+            db_index = None
+
+    # C. Within-Cluster Sum of Squares (Inertia / WCSS)
+    inertia = float(kmeans.inertia_)
+
+    # 3. Cluster Distribution & Statistics
     counts = pd.Series(labels).value_counts().sort_index()
     percentages = (counts / n_samples) * 100.0
 
@@ -226,7 +222,7 @@ def run_kmeans_segmentation(
         })
     distribution_df = pd.DataFrame(cluster_distribution)
 
-    # 5. Cluster Profile Table (Mean financial characteristics)
+    # 4. Cluster Profile Table (Mean financial characteristics)
     df_with_clusters = X_df.copy()
     df_with_clusters["Cluster"] = cluster_series
     profile_df = df_with_clusters.groupby("Cluster").mean().reindex(cluster_names).dropna(how='all')
@@ -234,7 +230,7 @@ def run_kmeans_segmentation(
     semantic_labels = generate_cluster_semantic_labels(profile_df)
     distribution_df["Descriptive_Segment"] = distribution_df["Cluster"].map(semantic_labels)
 
-    # 6. Optional Post-Hoc Observed Target Rates (strictly descriptive, never used in fitting)
+    # 5. Optional Post-Hoc Observed Target Rates (strictly descriptive, never used in fitting)
     observed_default_rates = {}
     if target_series is not None:
         target_eval_df = pd.DataFrame({
@@ -246,7 +242,7 @@ def run_kmeans_segmentation(
             observed_default_rates[c_name] = round(float(rate_series.get(c_name, 0.0)), 2)
         distribution_df["Observed_Historical_Default_Rate (%)"] = distribution_df["Cluster"].map(observed_default_rates)
 
-    # 7. Natural Language Statistical Interpretations
+    # 6. Natural Language Statistical Interpretations
     interpretations = {}
     for c_name in cluster_names:
         if c_name in profile_df.index:
@@ -271,7 +267,6 @@ def run_kmeans_segmentation(
         "imputer": imputer,
         "kmeans": kmeans,
         "features": feature_names,
-        "pca": pca
     }
 
     return {
@@ -282,10 +277,10 @@ def run_kmeans_segmentation(
         "features_used": feature_names,
         "labels": labels,
         "silhouette_score": sil_score,
+        "davies_bouldin_index": db_index,
+        "inertia": inertia,
         "distribution_df": distribution_df,
         "profile_df": profile_df,
-        "pca_df": pca_df,
-        "pca_explained_variance": [float(v) for v in explained_var],
         "interpretations": interpretations,
         "semantic_labels": semantic_labels,
         "observed_default_rates": observed_default_rates,
@@ -294,7 +289,6 @@ def run_kmeans_segmentation(
         "scaler": scaler,
         "imputer": imputer,
         "kmeans": kmeans,
-        "pca": pca,
         "cluster_centers": kmeans.cluster_centers_
     }
 

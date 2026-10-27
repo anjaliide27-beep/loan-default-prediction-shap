@@ -1,187 +1,135 @@
 """
 home.py
 -------
-Page 1: Professional Home Dashboard for Explainable Loan Default Prediction.
+Page 1: Executive Dashboard for Unsupervised Borrower Segmentation Using K-Means Clustering.
+Presents project objectives, financial feature architecture, and interactive portfolio overview.
 """
 
-import json
 import os
 import streamlit as st
+import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 from src.ui_pages.styles import render_metric_card, render_disclaimer
+from src.clustering import run_kmeans_segmentation, CANDIDATE_CLUSTERING_FEATURES
 
-MODELS_DIR = "models"
+DATA_PATH = os.path.join("data", "loan_train.csv")
 
 
 def render_home_page():
-    # Load metadata and metrics
-    metadata_path = os.path.join(MODELS_DIR, "metadata.json")
-    metrics_path = os.path.join(MODELS_DIR, "metrics.json")
-
-    has_artifacts = os.path.exists(metadata_path) and os.path.exists(metrics_path)
-
-    if has_artifacts:
-        with open(metadata_path, "r") as f:
-            metadata = json.load(f)
-        with open(metrics_path, "r") as f:
-            metrics = json.load(f)
-        total_rows = metadata.get("total_dataset_rows", 27003)
-        total_cols = metadata.get("total_dataset_cols", 47)
-        num_features = metadata.get("selected_feature_count", 19)
-        dist = metadata.get("target_distribution", {"fully_paid_0": 23026, "default_1": 3977})
-        paid_cnt = dist.get("fully_paid_0", 23026)
-        def_cnt = dist.get("default_1", 3977)
-        def_rate = def_cnt / total_rows * 100
-        best_auc = max([m.get("roc_auc", 0) for m in metrics.values()])
-    else:
-        total_rows = 27003
-        total_cols = 47
-        num_features = 19
-        paid_cnt = 23026
-        def_cnt = 3977
-        def_rate = 14.73
-        best_auc = 0.7103
-
     # Hero Banner
     st.markdown("""
     <div class="hero-banner">
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-            <span class="badge badge-teal">AIML Capstone Project</span>
-            <span class="badge" style="background: rgba(255,255,255,0.15); color: #fff;">XAI & Credit Scoring</span>
+            <span class="badge badge-teal">Unsupervised Machine Learning</span>
+            <span class="badge" style="background: rgba(255,255,255,0.15); color: #fff;">K-Means & Portfolio Analytics</span>
         </div>
-        <div class="hero-title">Explainable Loan Default Prediction</div>
+        <div class="hero-title">Borrower Segmentation Using K-Means Clustering</div>
         <div class="hero-sub">
-            Empowering transparent, fair, and interpretable credit risk assessment using supervised machine learning 
-            and SHapley Additive exPlanations (SHAP) on historical LendingClub records.
+            Discover natural financial patterns, debt behaviors, and credit profiles across loan applicants 
+            without relying on historical repayment labels. Features cost-sensitive operational decision support 
+            and counterfactual recourse recommendations.
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     # Key Metrics Cards Row
+    total_records = 27003
+    num_features = 15
+
     c1, c2, c3, c4 = st.columns(4)
     with c1:
-        st.markdown(render_metric_card("Dataset Size", f"{total_rows:,}", f"{total_cols} raw columns", "#0EA5E9"), unsafe_allow_html=True)
+        st.markdown(render_metric_card("Analyzed Cohort", f"{total_records:,}", "LendingClub records", "#0EA5E9"), unsafe_allow_html=True)
     with c2:
-        st.markdown(render_metric_card("Application Features", f"{num_features}", "0 post-origination leakage", "#10B981"), unsafe_allow_html=True)
+        st.markdown(render_metric_card("Financial Features", f"{num_features}", "Standardized with StandardScaler", "#10B981"), unsafe_allow_html=True)
     with c3:
-        st.markdown(render_metric_card("Historical Defaults", f"{def_cnt:,}", f"{def_rate:.1f}% class imbalance", "#EF4444"), unsafe_allow_html=True)
+        st.markdown(render_metric_card("Cluster Capacity", "2 to 6", "Default k = 3 segments", "#F59E0B"), unsafe_allow_html=True)
     with c4:
-        st.markdown(render_metric_card("Peak Model ROC-AUC", f"{best_auc:.3f}", "Logistic Reg & Random Forest", "#8B5CF6"), unsafe_allow_html=True)
+        st.markdown(render_metric_card("Supervision Required", "0%", "Strictly label-free K-Means", "#8B5CF6"), unsafe_allow_html=True)
 
-    # Project Overview & Class Distribution
+    # Project Overview & Architecture
     col_left, col_right = st.columns([1.2, 0.8])
 
     with col_left:
-        st.markdown('<div class="section-header">Problem Statement & Objectives</div>', unsafe_allow_html=True)
-        st.markdown("""
-        Traditional credit underwriting models rely heavily on black-box scoring or inflexible rule sets. When an applicant is denied or charged higher interest, conventional machine learning models cannot provide justifiable, transparent adverse action reasons required by financial regulations (such as the Equal Credit Opportunity Act).
+        st.markdown('<div class="section-header">Project Rationale & Methodology</div>', unsafe_allow_html=True)
+        st.markdown(r"""
+        In modern credit portfolio management, lenders require objective ways to categorize borrowers based on 
+        multi-dimensional financial health—without solely relying on backward-looking default labels that may reflect 
+        historical underwriting bias.
 
-        **Core Project Objectives:**
-        - **Rigorous Data Preprocessing:** Eliminate post-loan leakage columns (`recoveries`, `total_pymnt`, `last_pymnt_amnt`) to ensure model uses only application-time information.
-        - **Supervised Machine Learning:** Train and compare Logistic Regression, Decision Trees, Random Forests, and XGBoost with explicit class-imbalance compensation.
-        - **Local & Global Explainability:** Implement SHAP to quantify exact feature attributions for individual applicant predictions and broad risk trends.
-        - **Interactive Risk Management:** Provide scenario simulation (*What-If Analysis*) and configurable risk thresholds for informed, responsible decision support.
+        **Core Architecture & Features:**
+        - **Label-Free Feature Engineering:** Eliminates post-loan leakage variables and isolates target columns (`loan_status`). Standardizes 15 core financial attributes using `StandardScaler`.
+        - **K-Means Clustering:** Identifies cohesive borrower segments with configurable cluster counts ($k \in [2, 6]$) and fixed random seeds for strict reproducibility.
+        - **2D Dimensionality Reduction (PCA):** Projects multi-dimensional standardized feature space into 2 principal components for clear visual separation.
+        - **Cost-Sensitive Decision Support:** Translates cluster distributions into actionable operational servicing strategies and compares estimated portfolio expenditures.
+        - **Actionable Counterfactual Recourse:** Identifies minimal plausible adjustments to actionable attributes (loan amount, DTI) that transition a borrower into a different cluster.
         """)
 
     with col_right:
-        st.markdown('<div class="section-header">Target Distribution</div>', unsafe_allow_html=True)
-        # Plotly Donut Chart
-        labels = ['Fully Paid (Non-Default)', 'Charged Off (Default)']
-        values = [paid_cnt, def_cnt]
-        colors = ['#10B981', '#EF4444']
-
-        fig = go.Figure(data=[go.Pie(
-            labels=labels,
-            values=values,
-            hole=.55,
-            marker_colors=colors,
+        st.markdown('<div class="section-header">Feature Space Composition</div>', unsafe_allow_html=True)
+        feature_categories = {
+            "Debt & Leverage (DTI, Util, Revolving)": 5,
+            "Income & Capacity (Annual Inc, Ratios)": 4,
+            "Loan Terms (Amount, Rate, Installment)": 4,
+            "Credit History (Open/Total Accounts, Delinq)": 2
+        }
+        fig_donut = go.Figure(data=[go.Pie(
+            labels=list(feature_categories.keys()),
+            values=list(feature_categories.values()),
+            hole=0.55,
+            marker_colors=['#0F766E', '#0284C7', '#D97706', '#7C3AED'],
             textinfo='label+percent',
-            hoverinfo='label+value+percent'
+            hoverinfo='label+value'
         )])
-        fig.update_layout(
-            margin=dict(l=10, r=10, t=10, b=10),
+        fig_donut.update_layout(
+            height=320,
             showlegend=False,
-            height=260,
-            paper_bgcolor='rgba(0,0,0,0)',
-            plot_bgcolor='rgba(0,0,0,0)'
+            margin=dict(l=10, r=10, t=20, b=10),
+            plot_bgcolor="#FFFFFF",
+            paper_bgcolor="#FFFFFF"
         )
-        st.plotly_chart(fig, use_container_width=True)
-        st.caption("Class imbalance ratio: ~5.8:1. Managed through balanced class weighting.")
+        st.plotly_chart(fig_donut, use_container_width=True)
 
-    # Overview of Algorithms
-    st.markdown('<div class="section-header">Machine Learning Architecture</div>', unsafe_allow_html=True)
-    a1, a2, a3, a4 = st.columns(4)
+    # Quick Navigation Cards
+    st.markdown("---")
+    st.markdown('<div class="section-header">Interactive Exploration Modules</div>', unsafe_allow_html=True)
 
-    with a1:
+    q1, q2, q3, q4 = st.columns(4)
+    with q1:
         st.markdown("""
-        <div class="metric-card">
-            <div style="font-weight: 700; color: #0F172A; margin-bottom: 4px;">Logistic Regression</div>
-            <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 8px;">Linear Baseline</div>
-            <div style="font-size: 0.82rem; color: #334155;">
-                Interpretable linear benchmark with balanced class weighting. Serves as reference for non-linear models.
-            </div>
+        <div class="metric-card" style="text-align: center;">
+            <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">📁</div>
+            <div style="font-weight: 700; color: #0F172A; margin-bottom: 0.25rem;">Upload Dataset</div>
+            <div style="font-size: 0.8rem; color: #64748B;">Upload custom CSV datasets to cluster new borrower cohorts without outcome labels.</div>
         </div>
         """, unsafe_allow_html=True)
-
-    with a2:
+    with q2:
         st.markdown("""
-        <div class="metric-card">
-            <div style="font-weight: 700; color: #0F172A; margin-bottom: 4px;">Decision Tree</div>
-            <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 8px;">Rule-Based Splits</div>
-            <div style="font-size: 0.82rem; color: #334155;">
-                Pruned tree with max depth 6 to prevent overfitting while capturing hierarchical credit feature interactions.
-            </div>
+        <div class="metric-card" style="text-align: center;">
+            <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">👥</div>
+            <div style="font-weight: 700; color: #0F172A; margin-bottom: 0.25rem;">K-Means Clustering</div>
+            <div style="font-size: 0.8rem; color: #64748B;">Explore 2–6 clusters, silhouette separation scores, and 2D PCA projections.</div>
         </div>
         """, unsafe_allow_html=True)
-
-    with a3:
+    with q3:
         st.markdown("""
-        <div class="metric-card" style="border-top: 3px solid #0EA5E9;">
-            <div style="font-weight: 700; color: #0EA5E9; margin-bottom: 4px;">Random Forest ★</div>
-            <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 8px;">Ensemble Averaging</div>
-            <div style="font-size: 0.82rem; color: #334155;">
-                100 bagged trees mitigating individual variance. High stability for continuous SHAP attribution.
-            </div>
+        <div class="metric-card" style="text-align: center;">
+            <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">💰</div>
+            <div style="font-weight: 700; color: #0F172A; margin-bottom: 0.25rem;">Cost Decision Support</div>
+            <div style="font-size: 0.8rem; color: #64748B;">Compare operational servicing strategies and optimize portfolio expenditures.</div>
         </div>
         """, unsafe_allow_html=True)
-
-    with a4:
+    with q4:
         st.markdown("""
-        <div class="metric-card">
-            <div style="font-weight: 700; color: #0F172A; margin-bottom: 4px;">XGBoost</div>
-            <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 8px;">Gradient Boosting</div>
-            <div style="font-size: 0.82rem; color: #334155;">
-                Gradient-boosted decision trees optimizing binary logloss with positive scale weights.
-            </div>
+        <div class="metric-card" style="text-align: center;">
+            <div style="font-size: 1.8rem; margin-bottom: 0.25rem;">🔄</div>
+            <div style="font-weight: 700; color: #0F172A; margin-bottom: 0.25rem;">What-If Recourse</div>
+            <div style="font-size: 0.8rem; color: #64748B;">Test plausible financial perturbations to transition borrowers between segments.</div>
         </div>
         """, unsafe_allow_html=True)
-
-    # Guided Quick Links
-    st.markdown('<div class="section-header">Dashboard Navigation</div>', unsafe_allow_html=True)
-    g1, g2, g3, g4 = st.columns(4)
-    with g1:
-        st.markdown("""
-        **1. 📁 Upload Dataset**  
-        Upload a batch CSV file to score risk and calculate default probabilities across all records at scale.
-        """)
-    with g2:
-        st.markdown("""
-        **2. 📊 Exploratory EDA**  
-        Inspect feature correlations, distribution skews, missingness patterns, and target separation.
-        """)
-    with g3:
-        st.markdown("""
-        **3. 🎯 Prediction & SHAP**  
-        Score individual borrower profiles and generate local Shapley waterfall breakdowns.
-        """)
-    with g4:
-        st.markdown("""
-        **4. ⚖️ What-If & Models**  
-        Simulate counterfactual scenarios and compare held-out test evaluation benchmarks.
-        """)
 
     st.markdown(render_disclaimer(
-        "This system is an academic machine learning prototype trained on historical LendingClub US records. "
-        "It is not intended as an automated credit underwriting tool for real-world borrowers and is not certified "
-        "for regulatory lending decisions or Indian microfinance borrowers."
+        "Scientific & Regulatory Notice: Unsupervised K-Means clustering groups applicants based on mathematical similarity "
+        "across financial dimensions. Clusters do not predict individual loan defaults or guarantee credit approvals. "
+        "Operational cost estimates are user-defined simulations for portfolio resource allocation."
     ), unsafe_allow_html=True)

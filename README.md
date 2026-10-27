@@ -1,63 +1,63 @@
-# Explainable Loan Default Prediction Using Machine Learning and SHAP
+# Unsupervised Learning for Borrower Segmentation Using K-Means Clustering
 
-An interactive, responsive financial analytics web application built with **Streamlit**, **Scikit-Learn**, and **SHAP** (SHapley Additive exPlanations) for transparent credit risk evaluation.
+An interactive, responsive financial analytics web application built with **Streamlit**, **Scikit-Learn**, and **Plotly** for objective, label-free credit risk segmentation, cost-sensitive decision support, and actionable counterfactual recourse.
 
 ---
 
 ## 📌 Project Overview
 
-Traditional credit scoring models often operate as "black boxes," obscuring the critical financial attributes that influence credit approval or denial. Under modern financial regulations (such as the Equal Credit Opportunity Act and Fair Credit Reporting Act), creditors are legally and ethically obligated to supply clear Adverse Action reasons when credit is denied.
+Traditional credit scoring models rely heavily on historical loan outcome labels (`default` vs. `non-default`), which often inherit historical underwriting bias, macroeconomic noise, and regulatory friction. 
 
-This project delivers:
-- **Application-Time Feature Engineering:** Purges 12 post-loan leakage variables (`total_pymnt`, `recoveries`, `last_pymnt_amnt`, etc.) to guarantee genuine out-of-sample validity.
-- **Supervised Machine Learning Comparison:** Compares Logistic Regression, Decision Trees, Random Forests, and XGBoost with cost-sensitive class-imbalance compensation.
-- **Explainable AI with SHAP:** Computes exact, local feature attributions using cooperative game theory (Shapley values) for both applicant-level waterfall charts and global feature importance.
-- **What-If Counterfactual Simulator:** Allows users to interactively perturb financial parameters (income, debt-to-income, loan amount) and observe the resulting shifts in estimated default probability.
+This project implements an **end-to-end unsupervised machine learning architecture** that segments borrowers strictly based on their intrinsic financial and debt-capacity profiles, completely independent of historical default labels:
+
+- **Strict Label-Free Preprocessing:** Completely excludes target outcomes (`loan_status`), personal identifiers (`id`, `member_id`), and post-origination leakage columns (`total_pymnt`, `recoveries`, `last_pymnt_amnt`).
+- **Standardized Multi-Dimensional Feature Space:** Cleans, imputes missing values, and normalizes 15 core financial attributes using `StandardScaler` to ensure unbiased Euclidean distance calculations.
+- **K-Means Borrower Segmentation:** Partitions cohorts into cohesive borrower personas with user-configurable cluster counts ($k \in [2, 6]$, defaulting to 3), reproducible initialization (`random_state=42`, `n_init=10`), and silhouette score quantification.
+- **2D PCA Dimensionality Reduction:** Projects the high-dimensional standardized feature space into 2 principal components for intuitive cohort visual exploration.
+- **Cluster Insights & Statistical Profiling:** Generates comprehensive mean financial metric tables, standardized Z-score heatmaps, and objective, non-judgmental semantic personas (e.g., *Moderate-Principal • Balanced-Debt*, *Low-Principal • Low-Leverage*).
+- **Cost-Sensitive Decision Support (Feature 1):** Translates borrower segments into operational portfolio servicing strategies, comparing flat uniform servicing against segment-tailored monitoring and user-customized intervention costs.
+- **Actionable Counterfactual Recourse (Feature 5):** Calculates minimal, plausible adjustments to controllable financial attributes (loan amount, DTI, verified income) that transition a borrower into a different target segment, while strictly holding immutable credit history constant.
 
 ---
 
 ## 🛠️ Technology Stack
 
-- **Python:** 3.10 to 3.14
-- **Web Interface:** Streamlit
+- **Language:** Python 3.10 to 3.14
+- **Web Interface:** Streamlit (Custom Responsive Theme & CSS)
 - **Data Manipulation:** Pandas, NumPy
-- **Machine Learning:** Scikit-Learn, XGBoost
-- **Explainable AI (XAI):** SHAP (`TreeExplainer`)
-- **Data Visualization:** Plotly Graph Objects & Express
-- **Model Serialization:** Joblib
+- **Unsupervised Machine Learning:** Scikit-Learn (`KMeans`, `StandardScaler`, `PCA`, `SimpleImputer`, `silhouette_score`)
+- **Interactive Visualization:** Plotly Graph Objects & Express
 
 ---
 
 ## 📂 Project Structure
 
 ```
-Explainable-Loan-Default/
+AIML-MINIPROJECT/
 │
 ├── data/
-│   └── loan_train.csv          # LendingClub historical loan dataset (27,003 records)
-│
-├── models/                     # Saved model artifacts & metrics
-│   ├── preprocessor.joblib     # Fitted ColumnTransformer (scaling & one-hot encoding)
-│   ├── models.joblib           # Dictionary of trained classifiers
-│   ├── rf_explainer.joblib     # Pre-fitted SHAP TreeExplainer
-│   ├── metrics.json            # Cross-validated test metrics
-│   └── metadata.json           # Feature names and dataset statistics
+│   └── loan_train.csv          # LendingClub loan dataset (27,003 records)
 │
 ├── src/
 │   ├── __init__.py
-│   ├── data_processing.py      # Cleaning logic, leakage filters, ColumnTransformer
-│   ├── train_model.py          # Stratified train/test split, model training & evaluation
-│   ├── prediction.py           # Inference engine, input validation, risk categorization
-│   ├── explainability.py       # Local waterfall plots, global importance, natural summaries
+│   ├── data_processing.py      # Data cleaning, financial ratio engineering, leakage guards
+│   ├── clustering.py           # Core K-Means clustering, PCA projection, persona labeling
+│   ├── cost_support.py         # Feature 1: Cost-Sensitive Decision Support & strategy comparison
+│   ├── cluster_counterfactuals.py # Feature 5: Counterfactual Borrower Recourse & Euclidean distance
 │   └── ui_pages/
 │       ├── __init__.py
-│       ├── styles.py           # Custom CSS, cards, and theme formatting
-│       ├── home.py             # Page 1: Executive Dashboard & Dataset Summary
-│       ├── eda.py              # Page 2: Exploratory Data Analysis & Correlations
-│       ├── prediction_page.py  # Page 3: Interactive Applicant Scoring Form
-│       ├── shap_page.py        # Page 4: Explainable AI with SHAP
-│       ├── models_page.py      # Page 5: Model Evaluation & Metric Comparison
-│       └── whatif_page.py      # Page 6: Counterfactual Scenario Simulator
+│       ├── styles.py           # Dashboard styling, metric cards, callouts
+│       ├── home.py             # Page 1: Executive Dashboard & Feature Space
+│       ├── upload_page.py      # Page 2: CSV Upload & Dynamic K-Means Pipeline
+│       ├── clustering_page.py  # Page 3: Borrower Segmentation (K-Means)
+│       ├── cluster_insights.py # Page 4: Cluster Insights & Relative Heatmaps
+│       ├── cost_support_page.py# Page 5: Cost-Sensitive Decision Support
+│       ├── whatif_cluster_page.py # Page 6: What-If & Counterfactual Recourse
+│       └── about_page.py       # Page 7: Architectural Reference & Methodology
+│
+├── tests/
+│   ├── __init__.py
+│   └── test_application.py     # 14-point automated verification test suite
 │
 ├── app.py                      # Streamlit application entry point
 ├── requirements.txt            # Python dependencies
@@ -87,10 +87,10 @@ Ensure `loan_train.csv` is situated in the `data/` folder:
 data/loan_train.csv
 ```
 
-### 5. Train and Serialize Models
-Run the training pipeline to generate models, compute test metrics, and fit the SHAP explainers:
+### 5. Run Automated Verification Tests
+Execute the full test suite to verify all 14 unsupervised requirements:
 ```bash
-python -m src.train_model
+python -m tests.test_application
 ```
 
 ### 6. Launch the Web Application
@@ -98,35 +98,24 @@ Start the interactive Streamlit dashboard:
 ```bash
 streamlit run app.py
 ```
-The application will automatically launch in your default web browser at `http://localhost:8501`.
+The application will open in your default browser at `http://localhost:8501`.
 
 ---
 
-## 🌐 Deployment on Streamlit Community Cloud
+## 📊 Application Pages Overview
 
-1. Push this repository to GitHub (ensure `data/loan_train.csv` and `models/` artifacts are included or generated via build script).
-2. Log in to [Streamlit Community Cloud](https://share.streamlit.io/).
-3. Click **"New App"** and select your GitHub repository and branch.
-4. Set the **Main file path** to `app.py`.
-5. Click **"Deploy!"**.
-
----
-
-## 📊 Summary of Evaluated Models (Unseen Test Data)
-
-| Model Name | ROC-AUC | Recall (Sensitivity) | Precision | F1-Score | Accuracy |
-| :--- | :---: | :---: | :---: | :---: | :---: |
-| **Random Forest (Primary)** | **0.7033** | **0.5849** | **0.2489** | **0.3492** | **0.6791** |
-| **XGBoost Classifier** | 0.7058 | 0.5874 | 0.2518 | 0.3525 | 0.6823 |
-| **Logistic Regression** | 0.7103 | 0.6352 | 0.2412 | 0.3496 | 0.6521 |
-| **Decision Tree** | 0.6839 | 0.5912 | 0.2369 | 0.3383 | 0.6595 |
-
-*Note: Models were trained using cost-sensitive class balancing to penalize false negatives (missed defaults) appropriately in an imbalanced 14.73% default environment.*
+| # | Page | Functionality |
+|---|------|---------------|
+| 1 | **🏠 Home Dashboard** | Executive summary, portfolio metrics, feature catalog, and architecture overview. |
+| 2 | **📁 Upload Dataset** | Upload custom CSV cohorts, preview features, configure $k$, and cluster immediately. |
+| 3 | **👥 Borrower Segmentation (K-Means)** | Interactive $k$ slider (2–6), 2D PCA scatter plot, cluster profiles, and silhouette evaluation. |
+| 4 | **📊 Cluster Insights & Profiles** | Segment persona cards, financial distributions (box plots), and standardized Z-score heatmaps. |
+| 5 | **💰 Cost-Sensitive Decision Support** | Evaluates portfolio servicing costs across clusters; compares uniform vs. segment-tailored policies. |
+| 6 | **🔄 What-If & Counterfactual Recourse** | Interactive parameter perturbation and algorithmic recommendations for transitioning clusters. |
+| 7 | **ℹ️ About Project** | Mathematical formulas, distance metrics, regulatory compliance, and architectural documentation. |
 
 ---
 
-## ⚖️ Academic, Ethical & Regulatory Disclaimers
+## ⚖️ Regulatory Notice & Disclaimers
 
-1. **Academic Demonstration Only:** This software is an educational prototype developed for an AIML academic capstone. It has received no regulatory certification, credit bureau approval, or commercial banking validation.
-2. **Domain Boundaries:** The models were trained on US peer-to-peer lending records (LendingClub) and **are not representative of Indian microfinance borrowers or emerging-market fintech credit dynamics**.
-3. **Attribution vs. Causation:** SHAP values represent mathematical feature contributions within the model function; they do not prove physical causality or guarantee future repayment performance.
+This software is an educational and analytical research platform developed for credit portfolio segmentation. Discovered clusters represent statistical mathematical proximities within standardized financial feature space and should not be used as the sole determinant for credit decisions without human review and regulatory compliance checks under the Equal Credit Opportunity Act (ECOA) and Fair Credit Reporting Act (FCRA).

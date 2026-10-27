@@ -1,46 +1,45 @@
 """
 test_application.py
 -------------------
-Automated verification test suite for Explainable Loan Default Prediction.
-Validates all 10 requirements from Section 8 of the project specifications.
+Automated verification test suite for:
+Unsupervised Learning for Borrower Segmentation Using K-Means Clustering.
+
+Validates all pure unsupervised learning requirements, data leakage safeguards,
+K-Means pipeline fitting, PCA visualization, cluster profiling,
+Cost-Sensitive Decision Support (Feature 1), and Counterfactual Borrower Recourse (Feature 5).
 """
 
 import os
-import json
-import joblib
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from src.data_processing import (
-    clean_raw_data,
-    get_preprocessor,
-    format_user_input,
-    NUMERICAL_FEATURES,
-    CATEGORICAL_FEATURES,
     LEAKAGE_COLUMNS,
     IDENTIFIER_COLUMNS,
     TARGET_COL
 )
-from src.prediction import (
-    predict_loan_default,
-    predict_batch,
-    validate_user_inputs,
-    load_model_artifacts
+from src.clustering import (
+    CANDIDATE_CLUSTERING_FEATURES,
+    prepare_clustering_data,
+    run_kmeans_segmentation,
+    generate_cluster_semantic_labels,
+    predict_borrower_cluster
 )
-from src.explainability import (
-    load_explainer_artifacts,
-    compute_instance_shap,
-    create_local_waterfall_plot,
-    create_global_importance_chart,
-    generate_plain_language_summary
+from src.cost_support import (
+    calculate_segment_costs,
+    compare_operational_strategies
 )
-from src.ui_pages.prediction_page import PRESETS
+from src.cluster_counterfactuals import (
+    generate_cluster_counterfactuals,
+    IMMUTABLE_FEATURES
+)
+from src.ui_pages.whatif_cluster_page import BORROWER_PRESETS
 
 
 def test_verification_suite():
-    print("=" * 70)
-    print("RUNNING VERIFICATION SUITE: EXPLAINABLE LOAN DEFAULT PREDICTION")
-    print("=" * 70)
+    print("=" * 75)
+    print("RUNNING VERIFICATION SUITE: UNSUPERVISED BORROWER SEGMENTATION (K-MEANS)")
+    print("=" * 75)
 
     # 1. Dataset loads correctly
     print("\n[CHECK 1] Dataset Loading...")
@@ -48,223 +47,162 @@ def test_verification_suite():
     assert os.path.exists(data_path), "loan_train.csv not found in data/!"
     df = pd.read_csv(data_path, low_memory=False)
     assert len(df) == 27003, f"Expected 27,003 rows, got {len(df)}"
-    assert TARGET_COL in df.columns, "loan_status missing from dataset"
     print(f" PASS: Dataset loaded successfully with {len(df):,} rows and {df.shape[1]} columns.")
 
-    # 2. Preprocessing handles missing and categorical values
-    print("\n[CHECK 2] Preprocessing Pipeline...")
-    cleaned = clean_raw_data(df)
-    preprocessor = get_preprocessor()
-    X = cleaned[NUMERICAL_FEATURES + CATEGORICAL_FEATURES]
-    X_trans = preprocessor.fit_transform(X)
-    assert not np.isnan(X_trans).any(), "Found NaNs in transformed feature matrix!"
-    assert X_trans.shape[1] == 46, f"Expected 46 transformed features, got {X_trans.shape[1]}"
-    print(f" PASS: Transformed shape {X_trans.shape}. Missing values imputed and categoricals encoded.")
+    # 2. Data Cleaning & Feature Preparation without requiring target
+    print("\n[CHECK 2] Preprocessing Pipeline & Feature Engineering (Unsupervised)...")
+    unlabeled_df = df.drop(columns=[TARGET_COL]) if TARGET_COL in df.columns else df.copy()
+    X_df, X_scaled, feat_names, scaler, imputer, target_series = prepare_clustering_data(unlabeled_df)
+    assert not np.isnan(X_scaled).any(), "Found NaNs in scaled clustering feature matrix!"
+    assert X_scaled.shape[0] == len(df), f"Expected {len(df)} rows, got {X_scaled.shape[0]}"
+    assert len(feat_names) >= 10, f"Expected at least 10 clustering features, got {len(feat_names)}"
+    print(f" PASS: Cleaned & scaled matrix shape: {X_scaled.shape}. Used {len(feat_names)} financial features.")
 
-    # 3. Training completed successfully & models saved
-    print("\n[CHECK 3] Model Artifact Persistence...")
-    preproc, models, metrics, metadata = load_model_artifacts()
-    expected_models = ["Logistic Regression", "Decision Tree", "Random Forest", "XGBoost"]
-    for m in expected_models:
-        assert m in models, f"Model {m} missing from models dict!"
-    print(f" PASS: All 4 models loaded successfully: {list(models.keys())}")
+    # 3. Target and Leakage Columns Strictly Excluded
+    print("\n[CHECK 3] Target & Leakage Column Exclusion...")
+    for feat in feat_names:
+        assert feat not in LEAKAGE_COLUMNS, f"Leakage column {feat} leaked into clustering features!"
+        assert feat not in IDENTIFIER_COLUMNS, f"Identifier {feat} found in clustering features!"
+        assert feat != TARGET_COL, f"Target column '{TARGET_COL}' found in clustering features!"
+    print(f" PASS: All {len(LEAKAGE_COLUMNS)} leakage columns, identifiers, and target strictly excluded.")
 
-    # 4. Predictions run for valid input
-    print("\n[CHECK 4] Prediction Execution for Valid Input...")
-    sample_input = PRESETS["⭐ Prime Borrower (Low Risk Profile)"]
-    pred_res = predict_loan_default(sample_input, model_name="Random Forest")
-    assert pred_res["success"] is True, f"Prediction failed: {pred_res.get('errors')}"
-    assert 0.0 <= pred_res["probability"] <= 1.0, f"Probability out of range: {pred_res['probability']}"
-    assert pred_res["risk_tier"] in ["Low", "Medium", "High"], f"Invalid risk tier: {pred_res['risk_tier']}"
-    print(f" PASS: Valid input produced probability = {pred_res['probability']*100:.2f}%, Tier = {pred_res['risk_tier']}")
+    # 4. K-Means Clustering Pipeline Execution (k=3)
+    print("\n[CHECK 4] K-Means Clustering Pipeline Fitting...")
+    sample_df = df.head(1000).copy()
+    cluster_res = run_kmeans_segmentation(sample_df, n_clusters=3, random_state=42)
+    assert cluster_res["success"] is True, f"Clustering failed: {cluster_res.get('error')}"
+    assert cluster_res["n_clusters"] == 3, f"Expected 3 clusters, got {cluster_res['n_clusters']}"
+    assert "kmeans" in cluster_res["fitted_pipeline"], "Fitted KMeans model missing from pipeline dict"
+    assert "scaler" in cluster_res["fitted_pipeline"], "Fitted StandardScaler missing from pipeline dict"
+    assert len(cluster_res["distribution_df"]) == 3, "Distribution dataframe missing cluster rows"
+    print(f" PASS: K-Means successfully partitioned {cluster_res['n_records']} records into {cluster_res['n_clusters']} clusters.")
 
-    # 5. Invalid input produces useful error message
-    print("\n[CHECK 5] Input Validation & Error Messaging...")
-    invalid_input = dict(sample_input)
-    invalid_input["loan_amnt"] = -5000  # Negative loan amount
-    invalid_input["annual_inc"] = -100  # Negative income
-    invalid_input["int_rate"] = 65.0   # Out of bound rate
-    invalid_res = predict_loan_default(invalid_input)
-    assert invalid_res["success"] is False, "Validation failed to flag invalid inputs!"
-    assert len(invalid_res["errors"]) >= 3, "Did not capture all expected validation errors!"
-    print(f" PASS: Successfully caught {len(invalid_res['errors'])} validation errors with clear messages.")
+    # 5. 2D PCA Dimensionality Reduction
+    print("\n[CHECK 5] 2D PCA Dimensionality Reduction...")
+    pca_df = cluster_res["pca_df"]
+    assert "PC1" in pca_df.columns and "PC2" in pca_df.columns, "PC1/PC2 columns missing from PCA dataframe"
+    assert "Cluster" in pca_df.columns, "Cluster label missing from PCA dataframe"
+    assert len(pca_df) == len(sample_df), "PCA dataframe length mismatch"
+    var_exp = cluster_res["pca_explained_variance"]
+    assert len(var_exp) == 2 and sum(var_exp) > 0, "PCA explained variance invalid"
+    print(f" PASS: 2D PCA projected {len(pca_df)} points. Total variance explained: {sum(var_exp)*100:.1f}%.")
 
-    # 6. Target and leakage columns excluded from prediction inputs
-    print("\n[CHECK 6] Target & Leakage Column Exclusion...")
-    input_features = NUMERICAL_FEATURES + CATEGORICAL_FEATURES
-    assert TARGET_COL not in input_features, "TARGET_COL leaked into input features!"
-    for col in LEAKAGE_COLUMNS:
-        assert col not in input_features, f"Leakage column {col} found in input features!"
-    for col in IDENTIFIER_COLUMNS:
-        assert col not in input_features, f"Identifier {col} found in input features!"
-    print(f" PASS: Target and all {len(LEAKAGE_COLUMNS)} leakage columns strictly excluded.")
+    # 6. Silhouette Score Calculation
+    print("\n[CHECK 6] Silhouette Score Computation...")
+    sil_score = cluster_res["silhouette_score"]
+    assert sil_score is not None, "Silhouette score was not computed"
+    assert -1.0 <= sil_score <= 1.0, f"Silhouette score out of bounds: {sil_score}"
+    print(f" PASS: Silhouette score computed successfully: {sil_score:.4f}.")
 
-    # 7. Model metrics computed from held-out test data
-    print("\n[CHECK 7] Test Set Evaluation Metrics Integrity...")
-    with open(os.path.join("models", "metrics.json"), "r") as f:
-        saved_metrics = json.load(f)
-    for model_name, m in saved_metrics.items():
-        assert "roc_auc" in m and 0.5 < m["roc_auc"] <= 1.0, f"Invalid ROC-AUC for {model_name}"
-        assert "recall" in m and 0.0 < m["recall"] <= 1.0, f"Invalid Recall for {model_name}"
-        assert "confusion_matrix" in m, f"Missing confusion matrix for {model_name}"
-        cm = np.array(m["confusion_matrix"])
-        assert cm.sum() == 5401, f"Expected 5,401 test instances, got {cm.sum()}"
-    print(f" PASS: Held-out test set size = 5,401. Verified metrics for all 4 models.")
+    # 7. Cluster Profile Table & Semantic Personas
+    print("\n[CHECK 7] Cluster Profile Table & Persona Interpretation...")
+    profile_df = cluster_res["profile_df"]
+    assert len(profile_df) == 3, "Profile table row count mismatch"
+    assert "loan_amnt" in profile_df.columns, "loan_amnt missing from profile table"
+    semantic_labels = generate_cluster_semantic_labels(profile_df)
+    assert len(semantic_labels) == 3, "Semantic label count mismatch"
+    for cid, label in semantic_labels.items():
+        assert len(label) > 0, f"Empty label for cluster {cid}"
+    print(f" PASS: Generated profiles and semantic personas: {semantic_labels}")
 
-    # 8. SHAP explanations correspond to selected model and prediction
-    print("\n[CHECK 8] SHAP Attribution & Scaling Correctness...")
-    explainer, metadata, _ = load_explainer_artifacts()
-    shap_info = compute_instance_shap(pred_res["X_trans"], explainer=explainer)
-    base_val = shap_info["base_value"]
-    shap_sum = shap_info["class1_shap"].sum()
-    reconstructed_proba = base_val + shap_sum
-    # TreeExplainer probability output matches prediction
-    diff = abs(reconstructed_proba - pred_res["probability"])
-    assert diff < 1e-4, f"SHAP sum mismatch: {reconstructed_proba} vs {pred_res['probability']}"
-    fig_waterfall = create_local_waterfall_plot(shap_info)
-    assert len(fig_waterfall.data) > 0, "Waterfall plot has no traces"
-    summary_txt = generate_plain_language_summary(shap_info, sample_input)
-    assert len(summary_txt) > 50, "Summary text too short or empty"
-    print(f" PASS: SHAP efficiency verified: Base ({base_val:.4f}) + SHAP sum ({shap_sum:+.4f}) = Model Output ({pred_res['probability']:.4f})")
+    # 8. Single Borrower Cluster Assignment
+    print("\n[CHECK 8] Single Borrower Prediction via predict_borrower_cluster...")
+    test_borrower = BORROWER_PRESETS["⭐ Lower-Debt High-Capacity Borrower"]
+    pred_info = predict_borrower_cluster(test_borrower, cluster_res["fitted_pipeline"])
+    assert "assigned_cluster" in pred_info, "Assigned cluster missing from prediction"
+    assert 0 <= pred_info["assigned_cluster"] < 3, f"Assigned cluster out of range: {pred_info['assigned_cluster']}"
+    assert "distance_to_center" in pred_info and pred_info["distance_to_center"] >= 0, "Invalid distance to center"
+    print(f" PASS: Sample borrower assigned to Cluster {pred_info['assigned_cluster']} (Distance: {pred_info['distance_to_center']:.2f}).")
 
-    # 9. What-If analysis recalculates results
-    print("\n[CHECK 9] What-If Counterfactual Recalculation...")
-    revised_input = dict(sample_input)
-    revised_input["annual_inc"] = sample_input["annual_inc"] * 0.4  # Severe income cut
-    revised_input["dti"] = 35.0                                    # Elevated DTI
-    revised_res = predict_loan_default(revised_input, model_name="Random Forest")
-    assert revised_res["success"] is True
-    # Default risk should increase when income drops and DTI rises
-    assert revised_res["probability"] > pred_res["probability"], "What-If risk did not respond to financial stress!"
-    print(f" PASS: What-If simulation adjusted probability from {pred_res['probability']*100:.1f}% to {revised_res['probability']*100:.1f}%.")
+    # 9. Feature 1: Cost-Sensitive Decision Support
+    print("\n[CHECK 9] Feature 1: Cost-Sensitive Decision Support...")
+    custom_costs = {0: 120.0, 1: 350.0, 2: 700.0}
+    cost_res = compare_operational_strategies(
+        distribution_df=cluster_res["distribution_df"],
+        c_baseline_uniform=300.0,
+        cluster_action_costs=custom_costs
+    )
+    assert "comparison_df" in cost_res, "Cost comparison dataframe missing"
+    assert len(cost_res["comparison_df"]) == 3, "Expected 3 strategies in comparison table"
+    assert cost_res["baseline_total_cost"] == 300.0 * len(sample_df), "Baseline total cost calculation mismatch"
+    assert "recommendation" in cost_res, "Strategy recommendation missing"
+    print(f" PASS: Cost strategies compared successfully. Baseline: ${cost_res['baseline_total_cost']:,.0f}, Segment-Tailored: ${cost_res['tailored_total_cost']:,.0f}.")
 
-    # 10. Website pages import without runtime errors
-    print("\n[CHECK 10] Streamlit Page Renderers Integrity...")
+    # 10. Feature 5: Counterfactual Borrower Recourse
+    print("\n[CHECK 10] Feature 5: Counterfactual Borrower Recourse...")
+    borrower_for_cf = BORROWER_PRESETS["⚖️ Moderate-Debt Balanced Borrower"]
+    cf_results = generate_cluster_counterfactuals(
+        borrower_input=borrower_for_cf,
+        fitted_pipeline=cluster_res["fitted_pipeline"],
+        target_cluster_id=None,
+        max_recommendations=3
+    )
+    assert cf_results["success"] is True, f"Counterfactual generation failed: {cf_results.get('error')}"
+    assert len(cf_results["recommendations"]) > 0, "No counterfactual recommendations found"
+    best_rec = cf_results["recommendations"][0]
+    assert best_rec["target_cluster"] != cf_results["current_cluster"], "Recourse did not change cluster"
+    assert best_rec["euclidean_distance"] > 0, "Invalid Euclidean distance"
+    print(f" PASS: Found {len(cf_results['recommendations'])} recourse paths. Closest transition: Cluster {cf_results['current_cluster']} -> Cluster {best_rec['target_cluster']} (Dist: {best_rec['euclidean_distance']:.2f}).")
+
+    # 11. Immutable Feature Preservation in Counterfactual Recourse
+    print("\n[CHECK 11] Immutable Feature Preservation in Recourse...")
+    for rec in cf_results["recommendations"]:
+        for imm_feat in IMMUTABLE_FEATURES:
+            if imm_feat in borrower_for_cf:
+                original_val = borrower_for_cf[imm_feat]
+                rec_val = rec["proposed_values"].get(imm_feat, original_val)
+                assert rec_val == original_val, f"Immutable feature '{imm_feat}' was altered in recourse! {original_val} -> {rec_val}"
+    print(f" PASS: All immutable features ({', '.join(IMMUTABLE_FEATURES)}) strictly held constant.")
+
+    # 12. Input Validation Safeguards
+    print("\n[CHECK 12] Input Validation Safeguards for Small / Malformed Data...")
+    tiny_df = pd.DataFrame({"colA": [1, 2]})  # Only 2 rows, not enough for 3 clusters
+    tiny_res = run_kmeans_segmentation(tiny_df, n_clusters=3)
+    assert tiny_res["success"] is False, "Expected error on small dataset"
+    assert "error" in tiny_res, "Expected descriptive error message"
+    print(f" PASS: Safely caught insufficient data: '{tiny_res['error']}'.")
+
+    # 13. Streamlit Page Renderers Integrity
+    print("\n[CHECK 13] Streamlit Page Renderers Integrity...")
     from src.ui_pages.home import render_home_page
     from src.ui_pages.upload_page import render_upload_page
-    from src.ui_pages.eda import render_eda_page
-    from src.ui_pages.prediction_page import render_prediction_page
-    from src.ui_pages.shap_page import render_shap_page
-    from src.ui_pages.models_page import render_models_page
-    from src.ui_pages.whatif_page import render_whatif_page
     from src.ui_pages.clustering_page import render_clustering_page
-    print(" PASS: All 8 active page modules imported cleanly without syntax or dependency errors.")
+    from src.ui_pages.cluster_insights import render_cluster_insights_page
+    from src.ui_pages.cost_support_page import render_cost_support_page
+    from src.ui_pages.whatif_cluster_page import render_whatif_cluster_page
+    from src.ui_pages.about_page import render_about_page
+    assert callable(render_home_page)
+    assert callable(render_upload_page)
+    assert callable(render_clustering_page)
+    assert callable(render_cluster_insights_page)
+    assert callable(render_cost_support_page)
+    assert callable(render_whatif_cluster_page)
+    assert callable(render_about_page)
+    print(" PASS: All 7 pure unsupervised page renderers imported and verified callable.")
 
-    # 11. Batch dataset prediction and risk scoring
-    print("\n[CHECK 11] Batch Dataset Prediction & Risk Scoring...")
-    sample_batch = df.head(15).copy()
-    batch_res = predict_batch(sample_batch, model_name="Random Forest")
-    assert batch_res["success"] is True, f"Batch prediction failed: {batch_res.get('errors')}"
-    assert len(batch_res["scored_df"]) == 15, "Batch scored dataframe length mismatch!"
-    assert "Predicted_Risk_Tier" in batch_res["scored_df"].columns, "Predicted_Risk_Tier column missing!"
-    assert "Default_Probability (%)" in batch_res["scored_df"].columns, "Default_Probability column missing!"
-    assert batch_res["summary"]["total_records"] == 15, "Summary total_records mismatch!"
-    print(f" PASS: Batch prediction successfully scored 15 records. Avg probability = {batch_res['summary']['avg_probability_pct']}%.")
+    # 14. Verification of Supervised Exclusion
+    print("\n[CHECK 14] Supervised Learning Architecture Exclusion...")
+    from app import main as app_main
+    import inspect
+    app_source = inspect.getsource(app_main)
+    forbidden_terms = [
+        "render_prediction_page",
+        "render_shap_page",
+        "render_models_page",
+        "render_whatif_page",
+        "render_eda_page",
+        "predict_loan_default",
+        "TreeExplainer",
+        "Supervised Mode Active"
+    ]
+    for term in forbidden_terms:
+        assert term not in app_source, f"Forbidden supervised term '{term}' found in app.py!"
+    print(" PASS: All supervised pages, classification models, and SHAP terms completely excluded from app.py.")
 
-    # 12. Feature 1: K-Means Borrower Segmentation (Unsupervised Learning)
-    print("\n[CHECK 12] Feature 1: K-Means Clustering & Leakage Safeguards...")
-    from src.clustering import run_kmeans_segmentation
-    cluster_res = run_kmeans_segmentation(df.head(500), n_clusters=3, random_state=42)
-    assert cluster_res["n_clusters"] == 3, "K-Means cluster count mismatch!"
-    assert TARGET_COL not in cluster_res["features_used"], "TARGET_COL leaked into clustering features!"
-    for lk in LEAKAGE_COLUMNS:
-        assert lk not in cluster_res["features_used"], f"Leakage column {lk} leaked into clustering features!"
-    for id_col in IDENTIFIER_COLUMNS:
-        assert id_col not in cluster_res["features_used"], f"Identifier {id_col} leaked into clustering features!"
-    assert len(cluster_res["distribution_df"]) == 3, "Distribution dataframe must have 3 clusters"
-    assert cluster_res["pca_df"].shape[1] >= 4, "PCA dataframe missing projection columns"
-    print(f" PASS: K-Means successfully segmented cohort into 3 clusters using {len(cluster_res['features_used'])} features. Target and leakage strictly excluded.")
-
-    # 13. Feature 2: Cost-Sensitive Decision Threshold Optimization
-    print("\n[CHECK 13] Feature 2: Cost-Sensitive Threshold Optimization...")
-    from src.cost_optimization import get_validation_data_and_probabilities, optimize_decision_threshold
-    val_info = get_validation_data_and_probabilities(data_path, model_name="Random Forest")
-    assert val_info["success"] is True, "Validation data extraction failed!"
-    assert val_info["n_validation_samples"] == 4321, f"Expected 4,321 validation samples, got {val_info['n_validation_samples']}"
-    opt_cost_res = optimize_decision_threshold(val_info["y_true"], val_info["y_proba"], c_fn=5000.0, c_fp=1000.0)
-    assert 0.05 <= opt_cost_res["optimal_threshold"] <= 0.95, "Optimal threshold out of bounds!"
-    assert opt_cost_res["cost_savings"] > 0, "Optimal threshold failed to reduce total error cost vs default 0.50!"
-    print(f" PASS: Optimal threshold tau* = {opt_cost_res['optimal_threshold']:.2f}. Total validation savings = ${opt_cost_res['cost_savings']:,.0f} ({opt_cost_res['cost_savings_pct']:.1f}% reduction).")
-
-    # 14. Feature 3: Actionable Counterfactual Recourse
-    print("\n[CHECK 14] Feature 3: Actionable Counterfactual Recourse...")
-    from src.counterfactuals import generate_actionable_counterfactuals, IMMUTABLE_FEATURES
-    # Test on an elevated risk applicant
-    elevated_input = dict(PRESETS["⚖️ Average Borrower (Moderate Risk Profile)"])
-    elevated_input["dti"] = 28.0
-    elevated_input["loan_amnt"] = 25000
-    cf_res = generate_actionable_counterfactuals(elevated_input, model_name="Random Forest", decision_threshold=0.25)
-    assert cf_res["success"] is True, "Counterfactual generation failed!"
-    assert cf_res["valid_count"] > 0, "Expected valid counterfactual recourse recommendations for elevated borrower!"
-    for r in cf_res["recommendations"]:
-        for imm in IMMUTABLE_FEATURES:
-            if imm in elevated_input:
-                assert r["input_data"][imm] == elevated_input[imm], f"Immutable feature {imm} was modified!"
-        assert r["new_proba"] < r["base_proba"], "Recommended counterfactual did not reduce default probability!"
-    print(f" PASS: Found {cf_res['valid_count']} recourse recommendations for elevated borrower. Immutable credit history strictly preserved.")
-
-    # 15. Supervised Workflow Validation with & without loan_status
-    print("\n[CHECK 15] Supervised Workflow Validation (Target Presence vs Absence)...")
-    labeled_sample = df.head(20).copy()
-    unlabeled_sample = df.head(20).copy().drop(columns=[TARGET_COL])
-    
-    # Labeled dataset has TARGET_COL -> Supervised prediction succeeds
-    assert TARGET_COL in labeled_sample.columns, "Target column missing from labeled sample"
-    sup_res = predict_batch(labeled_sample, model_name="Random Forest")
-    assert sup_res["success"] is True, "Supervised batch prediction failed on labeled dataset!"
-    
-    # Unlabeled dataset missing TARGET_COL -> Supervised validation flag
-    assert TARGET_COL not in unlabeled_sample.columns, "Target column present in unlabeled sample"
-    # Verify our validation logic correctly identifies missing target for supervised learning
-    has_target = TARGET_COL in unlabeled_sample.columns
-    assert has_target is False, "Validation failed to detect missing target column!"
-    print(" PASS: Supervised mode correctly requires 'loan_status' and rejects unlabeled datasets.")
-
-    # 16. Unsupervised Workflow Execution on Unlabeled Dataset
-    print("\n[CHECK 16] Unsupervised Workflow on Unlabeled CSV...")
-    # Unsupervised K-Means clustering must succeed cleanly on dataset WITHOUT loan_status
-    unsup_res = run_kmeans_segmentation(unlabeled_sample, n_clusters=3, random_state=42)
-    assert unsup_res["n_clusters"] == 3, "Clustering failed to create 3 clusters on unlabeled dataset"
-    assert unsup_res["target_available"] is False, "Unsupervised mode erroneously flagged target as available!"
-    assert TARGET_COL not in unsup_res["features_used"], "Target leaked into clustering features!"
-    print(f" PASS: Unsupervised K-Means successfully clustered unlabeled data into {unsup_res['n_clusters']} clusters without 'loan_status'.")
-
-    # 17. Dynamic Navigation & Workflow Separation
-    print("\n[CHECK 17] Dynamic Workflow Navigation & Mode Separation...")
-    from src.ui_pages.upload_page import compute_df_hash
-    # Test hash change detection
-    hash1 = compute_df_hash(df.head(10))
-    hash2 = compute_df_hash(df.iloc[10:20])
-    assert hash1 != hash2, "DataFrame hash collision on different datasets!"
-
-    # Test Supervised page set exclusion
-    supervised_pages = {
-        "🏠 Home Dashboard": True,
-        "📁 Upload Dataset & Select Approach": True,
-        "📊 Exploratory Data Analysis": True,
-        "🎯 Loan Default Prediction": True,
-        "🔍 Explainable AI (SHAP)": True,
-        "⚖️ Model Comparison": True,
-        "🔄 What-If Analysis": True
-    }
-    assert "👥 Borrower Segmentation (K-Means)" not in supervised_pages, "Borrower Segmentation leaked into Supervised mode!"
-
-    # Test Unsupervised page set exclusion
-    unsupervised_pages = {
-        "🏠 Home Dashboard": True,
-        "📁 Upload Dataset & Select Approach": True,
-        "📊 Exploratory Data Analysis": True,
-        "👥 Borrower Segmentation (K-Means)": True
-    }
-    for sup_p in ["🎯 Loan Default Prediction", "🔍 Explainable AI (SHAP)", "⚖️ Model Comparison", "🔄 What-If Analysis"]:
-        assert sup_p not in unsupervised_pages, f"Supervised page {sup_p} leaked into Unsupervised mode!"
-    print(" PASS: Mutually exclusive navigation verified. Supervised & Unsupervised pages strictly partitioned.")
-
-    print("\n" + "=" * 70)
-    print("ALL 17 VERIFICATION CHECKS PASSED PERFECTLY!")
-    print("=" * 70)
+    print("\n" + "=" * 75)
+    print("ALL 14 UNSUPERVISED VERIFICATION CHECKS PASSED PERFECTLY!")
+    print("=" * 75)
 
 
 if __name__ == "__main__":
     test_verification_suite()
-

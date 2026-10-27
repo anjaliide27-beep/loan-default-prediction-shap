@@ -1,8 +1,9 @@
 """
 clustering.py
 -------------
-Unsupervised Learning module using K-Means clustering for borrower financial segmentation.
-Excludes identifiers, loan_status, and target-derived leakage features.
+Core Unsupervised Learning module for Borrower Segmentation using K-Means Clustering.
+Operates purely without supervision. Strictly excludes loan_status, IDs, and leakage columns.
+Provides pipeline fitting, instance prediction, 2D PCA projection, and cluster profiling.
 """
 
 import os
@@ -15,9 +16,17 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.impute import SimpleImputer
 
-from src.data_processing import clean_raw_data, TARGET_COL, LEAKAGE_COLUMNS, IDENTIFIER_COLUMNS
+from src.data_processing import (
+    clean_raw_data,
+    TARGET_COL,
+    LEAKAGE_COLUMNS,
+    IDENTIFIER_COLUMNS,
+    REDUNDANT_POST_ORIGINATION_COLUMNS
+)
 
-# Target candidate numerical features for unsupervised borrower segmentation
+DATA_PATH = os.path.join("data", "loan_train.csv")
+
+# Available candidate numerical financial features for borrower segmentation
 CANDIDATE_CLUSTERING_FEATURES = [
     'loan_amnt',
     'annual_inc',
@@ -37,7 +46,7 @@ CANDIDATE_CLUSTERING_FEATURES = [
 ]
 
 
-def prepare_clustering_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray, List[str], Optional[pd.Series]]:
+def prepare_clustering_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray, List[str], StandardScaler, SimpleImputer, Optional[pd.Series]]:
     """
     Cleans raw data and extracts numerical financial features for clustering.
     Guarantees strict exclusion of target (loan_status), leakage, and identifier columns.
@@ -46,21 +55,26 @@ def prepare_clustering_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray,
         X_df: Cleaned DataFrame with only selected financial features
         X_scaled: Standardized numpy array ready for KMeans
         feature_names: List of features actually used
-        target_series: Observed loan_status series (if present) for post-hoc analysis only
+        scaler: Fitted StandardScaler instance
+        imputer: Fitted SimpleImputer instance
+        target_series: Observed loan_status series (if present) strictly for post-hoc descriptive comparison
     """
-    # 1. Clean if not already cleaned
+    if df is None or len(df) == 0:
+        raise ValueError("Provided dataset is empty.")
+
+    # 1. Clean data using application-time transformation
     if 'int_rate_clean' not in df.columns or 'loan_to_income' not in df.columns:
         cleaned_df = clean_raw_data(df)
     else:
         cleaned_df = df.copy()
 
-    # 2. Extract observed target if available (strictly isolated for post-hoc evaluation)
+    # 2. Extract observed target if available (strictly isolated for post-hoc descriptive check)
     target_series = None
     if TARGET_COL in cleaned_df.columns:
         target_series = cleaned_df[TARGET_COL].copy()
 
-    # 3. Filter strictly to available candidate features that are NOT in target/leakage/identifiers
-    forbidden = set([TARGET_COL] + LEAKAGE_COLUMNS + IDENTIFIER_COLUMNS)
+    # 3. Filter strictly to candidate features that are NOT in target, leakage, identifiers, or post-origination
+    forbidden = set([TARGET_COL] + LEAKAGE_COLUMNS + IDENTIFIER_COLUMNS + REDUNDANT_POST_ORIGINATION_COLUMNS)
     selected_features = [
         col for col in CANDIDATE_CLUSTERING_FEATURES
         if col in cleaned_df.columns and col not in forbidden
@@ -71,14 +85,13 @@ def prepare_clustering_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray,
 
     if len(selected_features) < 2:
         raise ValueError(
-            f"Clustering requires at least 2 financial numerical features for 2D analysis. "
-            f"Found only {len(selected_features)} feature(s): {selected_features}."
+            f"Clustering requires at least 2 financial numerical features for meaningful multi-dimensional segmentation. "
+            f"Found only {len(selected_features)}: {selected_features}."
         )
 
     if len(cleaned_df) < 3:
         raise ValueError(
-            f"Clustering requires at least 3 borrower records. "
-            f"The provided dataset contains only {len(cleaned_df)} record(s)."
+            f"Clustering requires at least 3 borrower records. Provided dataset has only {len(cleaned_df)}."
         )
 
     X_df = cleaned_df[selected_features].copy()
@@ -93,7 +106,44 @@ def prepare_clustering_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray,
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X_df)
 
-    return X_df, X_scaled, selected_features, target_series
+    return X_df, X_scaled, selected_features, scaler, imputer, target_series
+
+
+def generate_cluster_semantic_labels(profile_df: pd.DataFrame) -> Dict[str, str]:
+    """
+    Generates non-judgmental, descriptive labels for clusters based on actual financial metrics.
+    Avoids unsupported terms like 'safe' or 'defaulter'.
+    """
+    semantic_labels = {}
+    for c_name in profile_df.index:
+        row = profile_df.loc[c_name]
+        loan = row.get('loan_amnt', 0)
+        inc = row.get('annual_inc', 0)
+        dti = row.get('dti', 0)
+        util = row.get('revol_util_clean', 0)
+
+        traits = []
+        if loan > 18000:
+            traits.append("High-Principal")
+        elif loan < 9000:
+            traits.append("Low-Principal")
+        else:
+            traits.append("Moderate-Principal")
+
+        if dti > 20.0 or util > 60.0:
+            traits.append("High-Leverage")
+        elif dti < 12.0 and util < 35.0:
+            traits.append("Low-Leverage")
+        else:
+            traits.append("Balanced-Debt")
+
+        if inc > 80000:
+            traits.append("High-Income")
+        elif inc < 45000:
+            traits.append("Modest-Income")
+
+        semantic_labels[c_name] = f"{c_name}: {' • '.join(traits)}"
+    return semantic_labels
 
 
 def run_kmeans_segmentation(
@@ -104,12 +154,19 @@ def run_kmeans_segmentation(
     max_silhouette_samples: int = 3000
 ) -> Dict[str, Any]:
     """
-    Performs K-Means clustering, 2D PCA projection, silhouette score calculation,
-    and profile generation.
+    Fits K-Means clustering, generates 2D PCA projections, calculates silhouette score,
+    and produces cluster profiles. Returns fitted pipeline objects for consistent downstream scoring.
     """
-    X_df, X_scaled, feature_names, target_series = prepare_clustering_data(df)
+    try:
+        X_df, X_scaled, feature_names, scaler, imputer, target_series = prepare_clustering_data(df)
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
     n_samples = len(X_df)
 
+    # Constrain clusters between 2 and 6, and not exceeding n_samples - 1
     n_clusters = max(2, min(n_clusters, min(6, n_samples - 1)))
 
     # 1. Fit KMeans
@@ -122,7 +179,7 @@ def run_kmeans_segmentation(
     cluster_names = [f"Cluster {i}" for i in range(n_clusters)]
     cluster_series = pd.Series([f"Cluster {i}" for i in labels], index=X_df.index, name="Cluster")
 
-    # 2. 2D PCA Projection for visualization
+    # 2. 2D PCA Projection
     pca = PCA(n_components=2, random_state=random_state)
     pca_coords = pca.fit_transform(X_scaled)
     explained_var = pca.explained_variance_ratio_
@@ -130,12 +187,13 @@ def run_kmeans_segmentation(
     pca_df = pd.DataFrame({
         "PCA_1": pca_coords[:, 0],
         "PCA_2": pca_coords[:, 1],
+        "PC1": pca_coords[:, 0],
+        "PC2": pca_coords[:, 1],
         "Cluster": cluster_series,
         "Cluster_ID": labels
     }, index=X_df.index)
 
-    # Add key hover features
-    for hover_col in ['loan_amnt', 'annual_inc', 'int_rate_clean', 'dti']:
+    for hover_col in ['loan_amnt', 'annual_inc', 'int_rate_clean', 'dti', 'revol_util_clean']:
         if hover_col in X_df.columns:
             pca_df[hover_col] = X_df[hover_col]
 
@@ -144,7 +202,6 @@ def run_kmeans_segmentation(
     if n_samples >= n_clusters * 2:
         try:
             if n_samples > max_silhouette_samples:
-                # Stratified or random sample for snappy responsive UI
                 np.random.seed(random_state)
                 sample_idx = np.random.choice(n_samples, size=max_silhouette_samples, replace=False)
                 sil_score = float(silhouette_score(X_scaled[sample_idx], labels[sample_idx]))
@@ -172,12 +229,12 @@ def run_kmeans_segmentation(
     # 5. Cluster Profile Table (Mean financial characteristics)
     df_with_clusters = X_df.copy()
     df_with_clusters["Cluster"] = cluster_series
+    profile_df = df_with_clusters.groupby("Cluster").mean().reindex(cluster_names).dropna(how='all')
 
-    profile_df = df_with_clusters.groupby("Cluster").mean()
-    # Reindex to order Cluster 0, Cluster 1, ...
-    profile_df = profile_df.reindex(cluster_names).dropna(how='all')
+    semantic_labels = generate_cluster_semantic_labels(profile_df)
+    distribution_df["Descriptive_Segment"] = distribution_df["Cluster"].map(semantic_labels)
 
-    # 6. Observed target default rate per cluster (strictly for post-hoc validation)
+    # 6. Optional Post-Hoc Observed Target Rates (strictly descriptive, never used in fitting)
     observed_default_rates = {}
     if target_series is not None:
         target_eval_df = pd.DataFrame({
@@ -187,9 +244,9 @@ def run_kmeans_segmentation(
         rate_series = target_eval_df.groupby("Cluster")["Target"].mean() * 100.0
         for c_name in cluster_names:
             observed_default_rates[c_name] = round(float(rate_series.get(c_name, 0.0)), 2)
-        distribution_df["Observed_Default_Rate (%)"] = distribution_df["Cluster"].map(observed_default_rates)
+        distribution_df["Observed_Historical_Default_Rate (%)"] = distribution_df["Cluster"].map(observed_default_rates)
 
-    # 7. Generate Natural Language Interpretations based on statistical profiles
+    # 7. Natural Language Statistical Interpretations
     interpretations = {}
     for c_name in cluster_names:
         if c_name in profile_df.index:
@@ -201,17 +258,27 @@ def run_kmeans_segmentation(
             avg_util = row.get('revol_util_clean', 0)
             obs_rate = observed_default_rates.get(c_name, None)
 
-            obs_txt = f" (Observed Historical Default Rate: {obs_rate:.1f}%)" if obs_rate is not None else ""
+            obs_txt = f" (Post-hoc historical default rate: {obs_rate:.1f}%)" if obs_rate is not None else ""
             desc = (
-                f"**{c_name}** comprises borrowers with average loan requests of **${avg_loan:,.0f}**, "
-                f"mean annual income of **${avg_inc:,.0f}**, average interest rate of **{avg_rate:.1f}%**, "
-                f"and average DTI of **{avg_dti:.1f}%** (utilization: {avg_util:.1f}%){obs_txt}."
+                f"**{semantic_labels.get(c_name, c_name)}**: Average loan request of **${avg_loan:,.0f}**, "
+                f"mean annual earnings of **${avg_inc:,.0f}**, average interest rate of **{avg_rate:.1f}%**, "
+                f"and DTI ratio of **{avg_dti:.1f}%** (revolving utilization: {avg_util:.1f}%){obs_txt}."
             )
             interpretations[c_name] = desc
 
+    fitted_pipeline = {
+        "scaler": scaler,
+        "imputer": imputer,
+        "kmeans": kmeans,
+        "features": feature_names,
+        "pca": pca
+    }
+
     return {
+        "success": True,
         "n_clusters": n_clusters,
         "n_samples": n_samples,
+        "n_records": n_samples,
         "features_used": feature_names,
         "labels": labels,
         "silhouette_score": sil_score,
@@ -220,6 +287,72 @@ def run_kmeans_segmentation(
         "pca_df": pca_df,
         "pca_explained_variance": [float(v) for v in explained_var],
         "interpretations": interpretations,
+        "semantic_labels": semantic_labels,
         "observed_default_rates": observed_default_rates,
-        "target_available": target_series is not None
+        "target_available": target_series is not None,
+        "fitted_pipeline": fitted_pipeline,
+        "scaler": scaler,
+        "imputer": imputer,
+        "kmeans": kmeans,
+        "pca": pca,
+        "cluster_centers": kmeans.cluster_centers_
+    }
+
+
+def predict_borrower_cluster(
+    arg1: Dict[str, Any],
+    arg2: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Transforms a single borrower dictionary using the exact fitted scaler & imputer,
+    and assigns it to a cluster via the fitted KMeans model.
+    Accepts either (borrower_input, fitted_pipeline) or (fitted_pipeline, borrower_input).
+    """
+    if "kmeans" in arg1 or "scaler" in arg1:
+        fitted_pipeline, borrower_input = arg1, arg2
+    else:
+        borrower_input, fitted_pipeline = arg1, arg2
+
+    scaler: StandardScaler = fitted_pipeline["scaler"]
+    imputer: SimpleImputer = fitted_pipeline["imputer"]
+    kmeans: KMeans = fitted_pipeline["kmeans"]
+    feature_names: List[str] = fitted_pipeline.get("features_used") or fitted_pipeline.get("features", [])
+
+    # Build single-row DataFrame
+    b_df = pd.DataFrame([borrower_input])
+
+    # Recompute financial ratios if not present or changed
+    if 'annual_inc' in b_df.columns:
+        inc = float(b_df['annual_inc'].iloc[0]) + 1.0
+        if 'loan_amnt' in b_df.columns and 'loan_to_income' not in b_df.columns:
+            b_df['loan_to_income'] = float(b_df['loan_amnt'].iloc[0]) / inc
+        if 'installment' in b_df.columns and 'installment_to_income' not in b_df.columns:
+            b_df['installment_to_income'] = (float(b_df['installment'].iloc[0]) * 12.0) / inc
+        if 'revol_bal' in b_df.columns and 'revol_to_income' not in b_df.columns:
+            b_df['revol_to_income'] = float(b_df['revol_bal'].iloc[0]) / inc
+
+    # Align columns to feature_names
+    for col in feature_names:
+        if col not in b_df.columns:
+            b_df[col] = np.nan
+
+    X_single = b_df[feature_names].copy()
+    X_imputed = imputer.transform(X_single)
+    X_scaled = scaler.transform(pd.DataFrame(X_imputed, columns=feature_names))
+
+    cluster_id = int(kmeans.predict(X_scaled)[0])
+    cluster_name = f"Cluster {cluster_id}"
+    semantic_name = fitted_pipeline.get("semantic_labels", {}).get(cluster_name, cluster_name)
+
+    # Compute Euclidean distance to cluster centroid in normalized space
+    centroid = kmeans.cluster_centers_[cluster_id]
+    dist_to_center = float(np.linalg.norm(X_scaled[0] - centroid))
+
+    return {
+        "cluster_id": cluster_id,
+        "assigned_cluster": cluster_id,
+        "cluster_name": cluster_name,
+        "semantic_name": semantic_name,
+        "distance_to_center": round(dist_to_center, 4),
+        "X_scaled": X_scaled[0]
     }

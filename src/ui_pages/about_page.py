@@ -1,66 +1,119 @@
 """
 about_page.py
 -------------
-Page 7: Academic documentation, ethical considerations, methodology, and limitations.
+Page 7: Comprehensive Project Documentation, Methodology, and Architectural Guide.
+Details the K-Means clustering pipeline, feature boundaries, cost support methodology,
+counterfactual recourse logic, and regulatory safeguards.
 """
 
 import streamlit as st
-from src.ui_pages.styles import render_disclaimer
+from src.ui_pages.styles import render_disclaimer, render_metric_card
 
 
 def render_about_page():
-    st.markdown('<div class="section-header">About the Project: Technical & Ethical Documentation</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">ℹ️ About the Project: Unsupervised Borrower Segmentation</div>', unsafe_allow_html=True)
 
-    st.subheader("1. Problem Statement & Motivation")
     st.markdown("""
-    In the digital lending and fintech sector, algorithmic credit underwriting models evaluate loan applicants at high velocity. However, advanced models such as Gradient Boosting Machines and Random Forests operate as complex non-linear functions ("black boxes"). When a loan application is rejected or subjected to elevated interest rates, lenders are legally and ethically obligated to explain the governing reasons.
-
-    This project demonstrates an **Explainable Machine Learning System** that pairs state-of-the-art predictive modeling with **SHapley Additive exPlanations (SHAP)**, providing mathematical transparency and local auditability for individual credit decisions.
+    ### Executive Overview
+    This project demonstrates the application of **Unsupervised Machine Learning (K-Means Clustering)** 
+    to segment loan applicants based on multi-dimensional financial health and leverage attributes. 
+    By operating in a purely unsupervised setting, the system avoids relying on historical default labels 
+    (`loan_status`) that may encode past institutional bias or macroeconomic distortions.
     """)
 
-    st.subheader("2. Dataset Source & Contextual Boundaries")
+    # Three Pillar Cards
+    p1, p2, p3 = st.columns(3)
+    with p1:
+        st.markdown("""
+        <div class="metric-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">👥</div>
+            <div style="font-weight: 700; color: #0F172A; font-size: 1rem; margin-bottom: 0.25rem;">K-Means Segmentation</div>
+            <div style="font-size: 0.82rem; color: #64748B; line-height: 1.45;">
+                Discovers natural clusters across standardized financial indicators with configurable cluster counts (k=2 to 6).
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with p2:
+        st.markdown("""
+        <div class="metric-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">💰</div>
+            <div style="font-weight: 700; color: #0F172A; font-size: 1rem; margin-bottom: 0.25rem;">Cost Decision Support</div>
+            <div style="font-size: 0.82rem; color: #64748B; line-height: 1.45;">
+                Simulates operational portfolio management budgets by comparing segment-tailored action costs against uniform servicing.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+    with p3:
+        st.markdown("""
+        <div class="metric-card">
+            <div style="font-size: 1.5rem; margin-bottom: 0.25rem;">🔄</div>
+            <div style="font-weight: 700; color: #0F172A; font-size: 1rem; margin-bottom: 0.25rem;">Counterfactual Recourse</div>
+            <div style="font-size: 0.82rem; color: #64748B; line-height: 1.45;">
+                Explores minimal, feasible financial perturbations (loan size, DTI) to transition borrowers into different clusters.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Methodology Section
+    st.markdown("### Methodology & Algorithmic Pipeline")
     st.markdown("""
-    - **Dataset Origin:** The underlying dataset consists of **27,003 peer-to-peer loan records** sourced from LendingClub's historical lending operations (2007–2011).
-    - **Geographical & Economic Context:** All records represent US-based consumer borrowing with prime/near-prime credit bureau tracking.
-    - **Crucial Domain Boundary:** **This dataset is not representative of Indian microfinance, rural cooperative banking, or emerging-market fintech borrowers.** Applying models trained on US consumer credit records directly to non-US jurisdictions without localized retraining and calibration introduces severe domain shift.
+    1. **Data Cleaning & Ratio Engineering:**
+       - Formats terms into numerical months (`term_months`).
+       - Strips percentage symbols from interest rates (`int_rate_clean`) and revolving utilization (`revol_util_clean`).
+       - Synthesizes core financial leverage ratios:
+         - $\\text{Loan-to-Income} = \\frac{\\text{loan\\_amnt}}{\\text{annual\\_inc} + 1}$
+         - $\\text{Installment-to-Income} = \\frac{\\text{installment} \\times 12}{\\text{annual\\_inc} + 1}$
+         - $\\text{Revolving-to-Income} = \\frac{\\text{revol\\_bal}}{\\text{annual\\_inc} + 1}$
+    2. **Strict Leakage & Identifier Isolation:**
+       - All post-origination loan performance attributes (`total_pymnt`, `recoveries`, `last_pymnt_amnt`, etc.) and borrower identifiers (`id`, `url`, `zip_code`) are **strictly excluded**.
+       - Outcome labels (`loan_status`) are strictly excluded from clustering inputs, pipeline fitting, and cluster assignments.
+    3. **Standardization & Distance Metric:**
+       - Standardizes all features using `StandardScaler` (zero mean, unit variance) so that high-magnitude attributes (e.g. annual income) do not overwhelm scale-sensitive attributes (e.g. DTI or interest rate).
+       - Imputes missing values with median imputation.
+    4. **K-Means Optimization:**
+       - Partitions records by minimizing within-cluster sum of squares (inertia):
+         $$\\arg\\min_{\\mathbf{S}} \\sum_{i=1}^{k} \\sum_{\\mathbf{x} \\in S_i} \\|\\mathbf{x} - \\boldsymbol{\\mu}_i\\|^2$$
+       - Uses `n_init=10` and `random_state=42` to guarantee deterministic, reproducible assignments.
+    5. **Silhouette Cohesion Scoring:**
+       - Evaluates cluster quality using the silhouette coefficient:
+         $$s(i) = \\frac{b(i) - a(i)}{\\max(a(i), b(i))}$$
+         where $a(i)$ is mean intra-cluster distance and $b(i)$ is mean nearest-cluster distance.
+    6. **2D Principal Component Projection (PCA):**
+       - Projects the 15-dimensional standardized space into two orthogonal principal components for intuitive visualization.
     """)
 
-    st.subheader("3. Feature Engineering & Leakage Prevention")
+    st.markdown("---")
+
+    # Feature Catalog
+    st.markdown("### Financial Feature Catalog")
     st.markdown("""
-    A fundamental requirement of real-world machine learning engineering is **temporal integrity**:
-    - **Application-Time Features Only:** We restrict model inputs strictly to attributes present at the exact time of loan origination (loan amount, term, self-reported income, debt-to-income, and historical credit lines).
-    - **Strict Elimination of Post-Origination Leakage:** 12 columns recording post-loan repayments, collections, and recoveries (`total_pymnt`, `recoveries`, `last_pymnt_amnt`, etc.) were systematically purged from training to ensure genuine out-of-sample validity.
+    | Category | Features Included | Rationale |
+    | :--- | :--- | :--- |
+    | **Loan Specifications** | `loan_amnt`, `installment`, `int_rate_clean` | Defines immediate borrower credit obligations |
+    | **Income & Capacity** | `annual_inc`, `loan_to_income`, `installment_to_income` | Quantifies debt servicing capacity relative to earnings |
+    | **Leverage & Debt** | `dti`, `revol_bal`, `revol_util_clean`, `revol_to_income` | Measures existing credit burden and line utilization |
+    | **Credit History** | `open_acc`, `total_acc`, `delinq_2yrs`, `inq_last_6mths` | Captures historical credit activity (strictly immutable) |
+    | **Strictly Excluded** | `loan_status`, `id`, `recoveries`, `total_pymnt` | Avoids target leakage and preserves pure unsupervised integrity |
     """)
 
-    st.subheader("4. Supervised Machine Learning & Evaluation Methodology")
-    st.markdown("""
-    Four candidate classifiers were evaluated:
-    1. **Logistic Regression:** Serves as the transparent linear baseline.
-    2. **Decision Tree Classifier:** Captures non-linear decision splits.
-    3. **Random Forest Classifier:** Primary ensemble model providing optimal ROC-AUC and continuous probability estimates.
-    4. **XGBoost:** Gradient boosted tree benchmark.
+    st.markdown("---")
 
-    **Imbalance Strategy & Metric Hierarchy:**
-    Due to the 14.73% minority default distribution, naive accuracy is discarded. Models are evaluated using **ROC-AUC, Recall (Sensitivity to defaults), Precision, and F1-score** computed on a held-out 20% stratified test set.
+    # Cost-Sensitive Decision Support Explanation
+    st.markdown("### How Cost-Sensitive Decision Support Works")
+    st.markdown("""
+    Unlike supervised learning (which balances false-positive vs. false-negative error costs), **unsupervised cost-sensitive decision support** 
+    evaluates the **operational expenditure of portfolio servicing policies**:
+    - **Uniform Policy:** Assumes every borrower receives identical account reviews ($C_{\\text{uniform}} = \\$120$/borrower).
+    - **Segment-Tailored Policy:** Dynamically allocates lower operational costs to low-debt, high-capacity segments (e.g. automated low-touch servicing at $\\$35$/borrower) and reserves intensive review and counseling for high-leverage segments ($\\$320$/borrower).
+    - **Total Expenditure Calculation:**
+      $$\\text{Total Portfolio Cost} = \\sum_{k=0}^{K-1} N_k \\times C_k$$
+      where $N_k$ is the number of borrowers in segment $k$ and $C_k$ is the action cost.
     """)
 
-    st.subheader("5. Explainable AI with SHAP")
-    st.markdown("""
-    SHAP provides local feature attributions rooted in coalitional game theory:
-    - **Efficiency Axiom:** The sum of SHAP attributions plus the population base rate equals the applicant's predicted default probability.
-    - **Interpretability:** Deconstructs positive factors (increasing risk) and negative factors (mitigating risk) for regulatory **Adverse Action Notices**.
-    """)
-
-    st.subheader("6. Ethical Considerations & Responsible AI")
-    st.markdown("""
-    - **Fair Lending Compliance:** Credit models must prevent discriminatory disparate impact against protected demographic attributes (race, gender, religion, marital status).
-    - **Data Minimization:** No sensitive personal identifiers (`id`, `url`, `desc`, `emp_title`, `zip_code`) were utilized in model fitting.
-    - **Transparency Over Secrecy:** Black-box rejections without clear remediation guidance harm financial inclusion. Explainability provides actionable feedback for borrowers to improve credit health.
-    """)
-
-    st.subheader("7. Academic Disclaimer & Limitations")
     st.markdown(render_disclaimer(
-        "This application is an educational capstone project developed for academic demonstration purposes. "
-        "It carries no regulatory approval, no banking validation, and no fairness certification. "
-        "It must not be deployed as an autonomous decision system in live financial environments."
+        "Scientific & Regulatory Compliance Notice: This application is an unsupervised exploratory data analysis system. "
+        "It does not perform binary loan default prediction, does not generate credit approval/denial scores, "
+        "and does not provide formal legal or financial advice. All scenario evaluations are mathematical simulations."
     ), unsafe_allow_html=True)

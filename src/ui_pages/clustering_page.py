@@ -1,11 +1,13 @@
 """
 clustering_page.py
 ------------------
-UI Page: Borrower Segmentation using Unsupervised K-Means Clustering.
-Discovers natural financial groupings across borrowers without labels.
+Interactive K-Means Borrower Segmentation Page.
+Enables dynamic exploration of cluster counts (k=2 to 6), 2D PCA projection,
+silhouette cohesion metrics, and downloadable segmented cohorts.
 """
 
 import os
+import io
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -15,24 +17,31 @@ import plotly.graph_objects as go
 from src.clustering import run_kmeans_segmentation
 from src.ui_pages.styles import render_disclaimer, render_metric_card
 
-
-@st.cache_data(show_spinner=False)
-def load_and_cluster_dataset(data_path: str, n_clusters: int):
-    """Loads dataset and runs K-Means segmentation with caching."""
-    df = pd.read_csv(data_path, low_memory=False)
-    results = run_kmeans_segmentation(df, n_clusters=n_clusters)
-    return results
+DATA_PATH = os.path.join("data", "loan_train.csv")
 
 
 def render_clustering_page():
     st.markdown('<div class="section-header">👥 Borrower Segmentation (K-Means)</div>', unsafe_allow_html=True)
     st.markdown("""
-    Explore unsupervised financial segmentation of borrowers using **K-Means Clustering**. 
-    This technique identifies natural groupings based entirely on borrower financial behaviors, debt levels, 
-    and credit attributes—**without using repayment labels (`loan_status`) or loan outcome data**.
+    Segment borrowers into cohesive financial groups using **Unsupervised K-Means Clustering**. 
+    The algorithm computes Euclidean distances across standardized financial features—such as loan amount, 
+    debt-to-income ratio, annual income, and revolving utilization—**without relying on repayment outcome labels**.
     """)
 
-    # Sidebar / Top parameter controls
+    # Active Dataset Source Detection
+    uploaded_df = st.session_state.get("uploaded_df")
+    if uploaded_df is not None:
+        source_name = st.session_state.get("uploaded_file_name", "Uploaded Dataset")
+        st.info(f"📁 Analyzing active uploaded dataset: **{source_name}** ({len(uploaded_df):,} records).")
+        target_df = uploaded_df
+    else:
+        if not os.path.exists(DATA_PATH):
+            st.error(f"Dataset not found at `{DATA_PATH}`.")
+            return
+        st.caption("📁 Analyzing baseline LendingClub dataset (27,003 records). Upload a custom CSV via **Upload Dataset** to segment new cohorts.")
+        target_df = pd.read_csv(DATA_PATH, low_memory=False)
+
+    # Segmentation Controls
     st.markdown("### 1. Segmentation Controls")
     col_ctrl1, col_ctrl2 = st.columns([1.5, 2.5])
 
@@ -49,28 +58,17 @@ def render_clustering_page():
     with col_ctrl2:
         st.markdown("""
         <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.75rem 1rem; font-size: 0.85rem; color: #475569; margin-top: 0.25rem;">
-            <strong>Unsupervised Safeguards:</strong> <code>loan_status</code> and all post-issuance leakage features 
-            have been strictly isolated. All numerical attributes are standardized with <code>StandardScaler</code>.
+            <strong>Unsupervised Safeguards:</strong> <code>loan_status</code> and identifiers are strictly excluded. 
+            All numerical features are standardized using <code>StandardScaler</code> to ensure equal distance weighting.
         </div>
         """, unsafe_allow_html=True)
 
-    # Load dataset & run clustering (Active uploaded dataset or default dataset)
-    uploaded_df = st.session_state.get("uploaded_df")
-    if uploaded_df is not None:
-        source_name = st.session_state.get("uploaded_file_name", "Uploaded Dataset")
-        st.info(f"📁 Analyzing active uploaded dataset: **{source_name}** ({len(uploaded_df):,} records).")
-        target_df = uploaded_df
-    else:
-        data_path = os.path.join("data", "loan_train.csv")
-        if not os.path.exists(data_path):
-            st.error(f"Dataset not found at `{data_path}`. Please verify the dataset location.")
-            return
-        st.caption("Analyzing baseline LendingClub dataset (27,003 records). Upload a custom CSV via **Upload Dataset** to segment new cohorts.")
-        target_df = pd.read_csv(data_path, low_memory=False)
-
-    with st.spinner(f"Clustering {len(target_df):,} borrower records into {n_clusters} segments with K-Means..."):
+    # Run K-Means Clustering
+    with st.spinner(f"Clustering {len(target_df):,} records into {n_clusters} segments with K-Means..."):
         try:
             results = run_kmeans_segmentation(target_df, n_clusters=n_clusters)
+            # Store in session state so downstream pages (Insights, Cost Support, What-If) use the exact same fitted pipeline
+            st.session_state["clustering_results"] = results
         except Exception as e:
             st.error(f"Error executing K-Means clustering: {e}")
             return
@@ -80,15 +78,15 @@ def render_clustering_page():
     m1, m2, m3, m4 = st.columns(4)
     with m1:
         st.markdown(render_metric_card(
-            "Total Borrowers Analyzed",
+            "Total Borrowers",
             f"{results['n_samples']:,}",
-            "LendingClub Dataset"
+            "Analyzed Cohort"
         ), unsafe_allow_html=True)
     with m2:
         st.markdown(render_metric_card(
-            "Configured Clusters (k)",
+            "Discovered Segments (k)",
             f"{results['n_clusters']}",
-            f"{len(results['features_used'])} Financial Features"
+            f"{len(results['features_used'])} Standardized Features"
         ), unsafe_allow_html=True)
     with m3:
         sil_score = results["silhouette_score"]
@@ -101,7 +99,7 @@ def render_clustering_page():
     with m4:
         pca_var = sum(results["pca_explained_variance"]) * 100.0
         st.markdown(render_metric_card(
-            "2D PCA Explained Variance",
+            "2D PCA Coverage",
             f"{pca_var:.1f}%",
             f"PC1: {results['pca_explained_variance'][0]*100:.1f}%, PC2: {results['pca_explained_variance'][1]*100:.1f}%"
         ), unsafe_allow_html=True)
@@ -110,14 +108,11 @@ def render_clustering_page():
     st.markdown("### 2. Segment Distribution & 2D Projection")
     col_vis1, col_vis2 = st.columns([1.1, 1.4])
 
-    # Cluster Size Distribution Bar Chart
+    cluster_colors = ["#0F766E", "#0284C7", "#D97706", "#7C3AED", "#DC2626", "#059669"]
+
     with col_vis1:
         st.markdown("##### Borrower Count per Cluster")
         dist_df = results["distribution_df"]
-        
-        # Color palette for clusters
-        cluster_colors = ["#0F766E", "#0284C7", "#D97706", "#7C3AED", "#DC2626", "#059669"]
-        
         fig_bar = px.bar(
             dist_df,
             x="Cluster",
@@ -133,19 +128,15 @@ def render_clustering_page():
             paper_bgcolor="#FFFFFF",
             yaxis=dict(title="Borrower Count", gridcolor="#F1F5F9"),
             xaxis=dict(title="Cluster"),
-            height=380,
+            height=370,
             margin=dict(t=20, b=30, l=40, r=20)
         )
         st.plotly_chart(fig_bar, use_container_width=True)
 
-    # 2D PCA Scatter Plot
     with col_vis2:
         st.markdown("##### 2D Principal Component Projection (PCA)")
         pca_df = results["pca_df"]
-        
-        # Sample for fast, crisp scatter rendering if large
         plot_df = pca_df.sample(min(3500, len(pca_df)), random_state=42)
-        
         fig_scatter = px.scatter(
             plot_df,
             x="PCA_1",
@@ -166,9 +157,9 @@ def render_clustering_page():
         fig_scatter.update_layout(
             plot_bgcolor="#FFFFFF",
             paper_bgcolor="#FFFFFF",
-            xaxis=dict(title=f"Principal Component 1 ({results['pca_explained_variance'][0]*100:.1f}% var)", gridcolor="#F1F5F9"),
-            yaxis=dict(title=f"Principal Component 2 ({results['pca_explained_variance'][1]*100:.1f}% var)", gridcolor="#F1F5F9"),
-            height=380,
+            xaxis=dict(title=f"Principal Component 1 ({results['pca_explained_variance'][0]*100:.1f}%)", gridcolor="#F1F5F9"),
+            yaxis=dict(title=f"Principal Component 2 ({results['pca_explained_variance'][1]*100:.1f}%)", gridcolor="#F1F5F9"),
+            height=370,
             margin=dict(t=20, b=30, l=40, r=20),
             legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
         )
@@ -176,11 +167,9 @@ def render_clustering_page():
 
     # Cluster Financial Profiles Table
     st.markdown("### 3. Cluster Financial Profile Comparison")
-    st.markdown("Average financial indicators by borrower segment:")
+    st.markdown("Average financial characteristics across borrower segments:")
 
     profile_df = results["profile_df"].copy()
-
-    # Create formatted display dataframe with readable column names
     display_cols_map = {
         'loan_amnt': 'Avg Loan Amount ($)',
         'annual_inc': 'Avg Annual Income ($)',
@@ -195,7 +184,6 @@ def render_clustering_page():
     present_cols = [c for c in display_cols_map.keys() if c in profile_df.columns]
     formatted_profile = profile_df[present_cols].rename(columns=display_cols_map)
 
-    # Format values cleanly
     for c in formatted_profile.columns:
         if '($)' in c:
             formatted_profile[c] = formatted_profile[c].apply(lambda x: f"${x:,.0f}")
@@ -206,24 +194,39 @@ def render_clustering_page():
 
     st.dataframe(formatted_profile, use_container_width=True)
 
-    # Natural Language Interpretations
+    # Statistical Interpretations
     st.markdown("### 4. Segment Statistical Interpretations")
     for c_name, interpretation in results["interpretations"].items():
         st.markdown(f"- {interpretation}")
 
-    # Post-Hoc Historical Default Rate Evaluation (Optional Analysis)
+    # Post-Hoc Historical Outcome Check (Optional Descriptive Evaluation)
     if results["target_available"]:
-        st.markdown("### 5. Observed Post-Hoc Default Rate Comparison")
+        st.markdown("### 5. Post-Hoc Historical Outcome Comparison")
         st.markdown("""
-        The table below displays the **historical observed default rate** within each cluster. 
+        The table below displays the **historical observed default rate** within each cluster for descriptive verification. 
         """)
-
-        eval_summary = results["distribution_df"][["Cluster", "Borrower_Count", "Percentage", "Observed_Default_Rate (%)"]]
+        eval_summary = results["distribution_df"][["Cluster", "Descriptive_Segment", "Borrower_Count", "Percentage", "Observed_Historical_Default_Rate (%)"]]
         st.dataframe(eval_summary.set_index("Cluster"), use_container_width=True)
 
         st.markdown(render_disclaimer(
-            "Important Unsupervised Learning Notice: The historical loan outcome (`loan_status`) was strictly "
-            "excluded from the K-Means clustering algorithm. Observed default rates are reported post-hoc solely to evaluate "
-            "whether unsupervised financial segmentation correlates naturally with credit risk outcomes. "
-            "Cluster labels (Cluster 0, Cluster 1, ...) are neutral descriptions and should not be used as automatic lending decisions."
+            "Unsupervised Safeguards Notice: Historical loan outcomes (`loan_status`) were strictly excluded from the "
+            "K-Means clustering algorithm. Observed default rates are reported post-hoc purely for descriptive validation "
+            "to assess whether unsupervised financial clusters align naturally with real-world credit risk. "
+            "Cluster labels are non-judgmental and do not constitute automatic credit approval or denial."
         ), unsafe_allow_html=True)
+
+    # Download Clustered CSV
+    st.markdown("### 6. Export Segmented Cohort")
+    clustered_df = target_df.copy()
+    clustered_df["Assigned_Cluster"] = [f"Cluster {i}" for i in results["labels"]]
+    clustered_df["Segment_Description"] = clustered_df["Assigned_Cluster"].map(results["semantic_labels"])
+    buf = io.StringIO()
+    clustered_df.to_csv(buf, index=False)
+
+    st.download_button(
+        label="📥 Download Segmented Dataset with Cluster Assignments (CSV)",
+        data=buf.getvalue(),
+        file_name=f"kmeans_clustered_borrowers_k{n_clusters}.csv",
+        mime="text/csv",
+        use_container_width=True
+    )

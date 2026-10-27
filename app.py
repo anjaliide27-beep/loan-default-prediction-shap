@@ -44,24 +44,77 @@ def main():
     <hr style="margin: 0.75rem 0 1.25rem 0; border: 0; border-top: 1px solid #E2E8F0;">
     """, unsafe_allow_html=True)
 
-    # Navigation Menu
-    pages = {
-        "🏠 Home Dashboard": render_home_page,
-        "📁 Upload Dataset & Predict Risk": render_upload_page,
-        "📊 Exploratory Data Analysis": render_eda_page,
-        "👥 Borrower Segmentation (K-Means)": render_clustering_page,
-        "🎯 Loan Default Prediction": render_prediction_page,
-        "🔍 Explainable AI (SHAP)": render_shap_page,
-        "⚖️ Model Comparison": render_models_page,
-        "🔄 What-If Analysis": render_whatif_page
-    }
+    # Navigation Menu - Dynamically filtered by Selected Workflow Mode
+    mode = st.session_state.get("workflow_mode")
+
+    if mode == "supervised":
+        pages = {
+            "🏠 Home Dashboard": render_home_page,
+            "📁 Upload Dataset & Select Approach": render_upload_page,
+            "📊 Exploratory Data Analysis": render_eda_page,
+            "🎯 Loan Default Prediction": render_prediction_page,
+            "🔍 Explainable AI (SHAP)": render_shap_page,
+            "⚖️ Model Comparison": render_models_page,
+            "🔄 What-If Analysis": render_whatif_page
+        }
+        mode_badge_html = """
+        <div style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.85rem; font-size: 0.82rem;">
+            <div style="font-weight: 700; color: #166534;">🎯 Supervised Mode Active</div>
+            <div style="color: #15803D; font-size: 0.75rem;">Default prediction & SHAP explainability</div>
+        </div>
+        """
+    elif mode == "unsupervised":
+        pages = {
+            "🏠 Home Dashboard": render_home_page,
+            "📁 Upload Dataset & Select Approach": render_upload_page,
+            "📊 Exploratory Data Analysis": render_eda_page,
+            "👥 Borrower Segmentation (K-Means)": render_clustering_page
+        }
+        mode_badge_html = """
+        <div style="background-color: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.85rem; font-size: 0.82rem;">
+            <div style="font-weight: 700; color: #0369A1;">👥 Unsupervised Mode Active</div>
+            <div style="color: #0284C7; font-size: 0.75rem;">K-Means clustering & borrower segmentation</div>
+        </div>
+        """
+    else:
+        pages = {
+            "🏠 Home Dashboard": render_home_page,
+            "📁 Upload Dataset & Select Approach": render_upload_page,
+            "📊 Exploratory Data Analysis": render_eda_page,
+            "🎯 Loan Default Prediction": render_prediction_page,
+            "🔍 Explainable AI (SHAP)": render_shap_page,
+            "⚖️ Model Comparison": render_models_page,
+            "🔄 What-If Analysis": render_whatif_page,
+            "👥 Borrower Segmentation (K-Means)": render_clustering_page
+        }
+        mode_badge_html = """
+        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.6rem 0.8rem; margin-bottom: 0.85rem; font-size: 0.82rem;">
+            <div style="font-weight: 700; color: #475569;">Mode: Unset (All Workflows)</div>
+            <div style="color: #64748B; font-size: 0.75rem;">Select approach in Upload Dataset</div>
+        </div>
+        """
+
+    # Display active mode badge in sidebar
+    st.sidebar.markdown(mode_badge_html, unsafe_allow_html=True)
+
+    # Safe index handling for dynamic page list
+    page_options = list(pages.keys())
+    saved_page = st.session_state.get("active_page")
+    default_index = page_options.index(saved_page) if saved_page in page_options else 0
 
     selected_page_name = st.sidebar.radio(
         "Navigation Menu",
-        options=list(pages.keys()),
-        index=0,
+        options=page_options,
+        index=default_index,
         label_visibility="collapsed"
     )
+    st.session_state["active_page"] = selected_page_name
+
+    # Mode switcher shortcut if a specific mode is active
+    if mode is not None:
+        if st.sidebar.button("🔄 Switch ML Approach", use_container_width=True):
+            st.session_state["active_page"] = "📁 Upload Dataset & Select Approach"
+            st.rerun()
 
     st.sidebar.markdown("---")
 

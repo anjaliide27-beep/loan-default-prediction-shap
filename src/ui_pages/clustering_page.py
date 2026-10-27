@@ -54,15 +54,23 @@ def render_clustering_page():
         </div>
         """, unsafe_allow_html=True)
 
-    # Load dataset & run clustering
-    data_path = os.path.join("data", "loan_train.csv")
-    if not os.path.exists(data_path):
-        st.error(f"Dataset not found at `{data_path}`. Please verify the dataset location.")
-        return
+    # Load dataset & run clustering (Active uploaded dataset or default dataset)
+    uploaded_df = st.session_state.get("uploaded_df")
+    if uploaded_df is not None:
+        source_name = st.session_state.get("uploaded_file_name", "Uploaded Dataset")
+        st.info(f"📁 Analyzing active uploaded dataset: **{source_name}** ({len(uploaded_df):,} records).")
+        target_df = uploaded_df
+    else:
+        data_path = os.path.join("data", "loan_train.csv")
+        if not os.path.exists(data_path):
+            st.error(f"Dataset not found at `{data_path}`. Please verify the dataset location.")
+            return
+        st.caption("Analyzing baseline LendingClub dataset (27,003 records). Upload a custom CSV via **Upload Dataset** to segment new cohorts.")
+        target_df = pd.read_csv(data_path, low_memory=False)
 
-    with st.spinner(f"Clustering {27003:,} borrower records into {n_clusters} segments with K-Means..."):
+    with st.spinner(f"Clustering {len(target_df):,} borrower records into {n_clusters} segments with K-Means..."):
         try:
-            results = load_and_cluster_dataset(data_path, n_clusters)
+            results = run_kmeans_segmentation(target_df, n_clusters=n_clusters)
         except Exception as e:
             st.error(f"Error executing K-Means clustering: {e}")
             return

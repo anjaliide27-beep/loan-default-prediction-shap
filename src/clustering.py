@@ -67,7 +67,19 @@ def prepare_clustering_data(df: pd.DataFrame) -> Tuple[pd.DataFrame, np.ndarray,
     ]
 
     if not selected_features:
-        raise ValueError("No valid clustering features found in dataset.")
+        raise ValueError("No valid financial clustering features found in dataset.")
+
+    if len(selected_features) < 2:
+        raise ValueError(
+            f"Clustering requires at least 2 financial numerical features for 2D analysis. "
+            f"Found only {len(selected_features)} feature(s): {selected_features}."
+        )
+
+    if len(cleaned_df) < 3:
+        raise ValueError(
+            f"Clustering requires at least 3 borrower records. "
+            f"The provided dataset contains only {len(cleaned_df)} record(s)."
+        )
 
     X_df = cleaned_df[selected_features].copy()
 
@@ -94,25 +106,11 @@ def run_kmeans_segmentation(
     """
     Performs K-Means clustering, 2D PCA projection, silhouette score calculation,
     and profile generation.
-
-    Args:
-        df: Input DataFrame (raw or cleaned)
-        n_clusters: Number of clusters (2 to 6)
-        random_state: Random state for reproducibility
-        n_init: Number of initializations
-        max_silhouette_samples: Sample size for fast silhouette scoring
-
-    Returns:
-        Dictionary with clustering results, metadata, profiles, and PCA coords.
     """
-    n_clusters = max(2, min(n_clusters, 6))
-
     X_df, X_scaled, feature_names, target_series = prepare_clustering_data(df)
     n_samples = len(X_df)
 
-    # Ensure n_clusters does not exceed number of samples
-    if n_samples < n_clusters:
-        n_clusters = max(2, n_samples)
+    n_clusters = max(2, min(n_clusters, min(6, n_samples - 1)))
 
     # 1. Fit KMeans
     kmeans = KMeans(
